@@ -1,0 +1,1505 @@
+#+STARTUP:    align fold nodlcheck hidestars oddeven lognotestate
+#+SEQ_TODO:   TODO(t) INPROGRESS(i) WAITING(w@) | DONE(d) CANCELED(c@)
+#+TAGS:       Write(w) Update(u) Fix(f) Check(c)
+#+HTML_HEAD:  <link rel="stylesheet" type="text/css" href="stylesheet.css" />
+#+TITLE:      Windows
+#+AUTHOR:     Suresh Kumar
+#+EMAIL:      sureshkumar.pp@gmail.com
+#+OPTIONS:    ^:{} H:3 num:t toc:t \n:nil @:t ::t |:t ^:t -:t f:t *:t TeX:t LaTeX:t skip:nil d:(HIDE) tags:not-in-toc
+
+* Tips
+** Mounting vhd in dev station (using diskpart)
+
+#+BEGIN_EXAMPLE
+    select vdisk file="C:\path\to\disk.vhd" 
+    attach vdisk 
+    assign
+    exit
+#+END_EXAMPLE
+
+** Cleaning Windows image if needed
+
+    - delete junction points (??? careful):
+
+#+BEGIN_EXAMPLE
+      for /f "delims=" %k in ('dir /b /AL /S .') do rd "%k"
+#+END_EXAMPLE
+
+    - Taking ownership of files
+
+#+BEGIN_EXAMPLE
+    takeown /D Y /f "h:\*" /r
+    cacls "h:" /t /e /g psureshkumar:f
+    attrib -s -r -h "path" /s /d /l
+#+END_EXAMPLE
+
+  - Copying the files to a directory
+
+#+BEGIN_EXAMPLE
+    robocopy /XJ /E h:\ d:\tmp\capture
+#+END_EXAMPLE
+
+** Compute hashing for all the files
+
+#+BEGIN_EXAMPLE
+Couple of options:
+
+1. Use 7z.exe (need version 9.25+ that introduces hashing function)
+
+   7z h -mm=sha1 -r first_boot\ > test.txt
+
+2. Need md5sum.exe, sed.exe in the path 
+
+   (for /f "delims=" %k in ('dir /a-d /b /s first_boot\') do md5sum "%k") | grep -v md5sum | sed "/^\s*$/d" > test.txt
+
+3. Use fciv.exe in path (note can't handle long file paths/names)
+
+   fciv.exe -bp first_boot -r first_boot\
+
+Then do a sed pass to cleanup base directory prefix if needed
+
+sed -i "s|D:\\tmp\\pnp\\scratch\\winpe_pass_after||g" test.txt
+#+END_EXAMPLE
+
+** Get all the driver files in the system
+  
+: reg query hklm\system\currentcontrolset\services /s | findstr ImagePath 2>nul | findstr /Ri ".*\.sys$"
+
+** Debugging
+
+    - Install "Debugger Tools" and "Windows Performace Toolkit" from
+      \\ws-in742\images\Windows Kits\8.0\StandaloneSDK 
+
+    - Set symbol path environment variable
+
+#+BEGIN_EXAMPLE
+:    _NT_SYMBOL_PATH=SRV*C:\symbols*http://msdl.microsoft.com/download/symbols
+#+END_EXAMPLE
+
+    - Optionally copy symbols from local symbol cache
+      copy symbols from \\ws-in742\{symbols,symcache} into c:\
+
+    - Use windbg for debugging and xperf for profiling
+
+    - Enable remote kernel debugging
+
+      BCD store should be modified to enable remote (kernel)
+      debugging. This can also be used for user mode application
+      debugging remotely. But user mode remote debugging can be done
+      without enabling kernel mode debugging if required (hint: use
+      dbgsrv.exe).
+
+#+BEGIN_EXAMPLE
+  # Note: "{default}" is just an alias to windows loader option. 
+          Use "bcdedit /enum" to see the valid name (sometime it is "{current}" as well
+          Replace 10.2.112.127 with your development machine IP
+          busparams must be matching your hardware (3.0.0 is for Alpha 2.1 hardware)
+
+  bcdedit.exe /store c:\Boot\BCD /debug "{default}" on
+  bcdedit.exe /store c:\Boot\BCD /create "{dbgsettings}"
+  bcdedit.exe /store c:\Boot\BCD /dbgsettings net hostip:10.2.112.127 port:50000 key:a.b.c.d
+  bcdedit.exe /store c:\Boot\BCD /set "{dbgsettings}" busparams 3.0.0
+  bcdedit.exe /store c:\Boot\BCD /set "{default}" inherit "{dbgsettings}
+
+#+END_EXAMPLE
+
+    - windbg
+  
+      http://www.osronline.com/article.cfm?article=295
+
+      Example debugging of winlogon.exe process remotely in kernel
+      debugging mode
+
+#+BEGIN_EXAMPLE
+ Note: Remote debugging should be enabled on the target machine to do remote debugging.
+       Lines starting with '*' are comments. It is windbg style, so can be copy pasted
+ * Launch windbg from startmenu or commandline (if commandline, use something like windbg.exe -d -k net:port=50000,key=a.b.c.d)
+   During booting, on first module load, it will break.
+
+ * Press 'g' or F5 and then break after shorttime (using ctrl-break) 
+ * Enable break on winlogon.exe load
+
+ !gflag +ksl
+ sxe ld winlogon.exe 
+ g
+
+ * Once the break is hit, set up break point on NtMapViewOfSection (since the PEB will not be populated yet)
+
+ bp /p $proc nt!NtMapViewOfSection
+ g
+
+ * Once we git NtMapViewOfSection breakpoint, disable it and set new breakpoints of interest in the target exe
+
+ bd 0
+ .process
+ .reload /f
+ .reload /f /user
+ !gflag -ksl
+ 
+ * Break on WinMain. Use x winlogon!* to examine symbols
+
+ bp /p $proc winlogon!WinMain
+
+ * Example: to find out all the registry keys it opens 
+
+ bp /p $proc kernelbase!RegOpenKeyExW "du /c 100 rdx;g"
+#+END_EXAMPLE
+
+ Note that on x64, first 4 parameters are passed via registers and
+ rest are in stack.  Please see the x64 ABI here for more
+ details [fn:16]
+
+Enable kernel debugging for serial driver (in kernel debugging mode)
+#+BEGIN_EXAMPLE
+  x *!
+  .reload /f @"serial.sys"
+  ed Serial!SerialDebugLevel 0xFFFFFFFF
+  ed Kd_DEFAULT_MASK 0x8
+#+END_EXAMPLE
+
+   Debugging Windows shutdown [fn:15]
+
+#+BEGIN_EXAMPLE
+ * break on system shutdown command
+ bp nt!NtSetSystemPowerState
+ g
+
+ * after hitting breakpoint, see the stack
+ kc
+ .reload
+ kc
+
+ * find the thread that sent the shutdown command
+ !pcr
+
+ * Look for "CurrentThread" value in the !pcr output. That is the thread we are interested in
+ * The following should give more info on which program/process initiated the shutdown etc
+ !thread threadid
+#+END_EXAMPLE
+
+   Break on .exe or DLL load (when in KD)
+
+#+BEGIN_EXAMPLE
+ * break on loading wininit.exe
+ !gflag +ksl
+ sxe ld wininit.exe
+
+ g
+ bp /p $proc  ntdll!InitSecurityCookie
+ .process /r /p $proc
+ g
+
+ * set few breakpoints that are of interest in that process
+ bp /p @$proc wininit!WxServerThread
+ bp /p @$proc wininit!SbKeyData
+ bp /p @$proc wininit!_imp_NtShutdownSystem
+#+END_EXAMPLE
+
+Debug services.exe from the beginning
+
+#+BEGIN_EXAMPLE
+!gflag +ksl
+sxe ld services.exe
+g
+bp /p $proc nt!NtMapViewOfSection
+g
+.process
+.reload /f
+bp services!ScStartService
+bp services!ScOpenPolicy
+g
+#+END_EXAMPLE
+
+** Debugging a program on startup
+   http://bugslasher.net/2011/03/26/how-to-debug-a-process-as-soon-as-it-starts-with-windbg-or-visual-studio-2010/
+** xperf
+    
+   Performance info gathering
+
+#+BEGIN_EXAMPLE
+ xperf -on PROC_THREAD+LOADER+INTERRUPT+DPC+PROFILE -stackwalk  profile -minbuffers 16 -maxbuffers 1024 -flushtimer 0 && timeout -1 && xperf -d perfdata.etl 
+#+END_EXAMPLE
+
+   Memory diagnostics/pool allocation tracing
+
+#+BEGIN_EXAMPLE
+ xperf -on diageasy+Pool -stackwalk PoolAlloc+PoolFree -buffersize 1024 -MaxFile 512 -FileMode Circular && timeout -1 && xperf -d trace_pool_alloc.etl
+ 
+ or
+
+ xperf -on PROC_THREAD+LOADER+Pool -stackwalk PoolAlloc -buffersize 1024 -maxfile 8192 -filemode Circular && timeout -1 && xperf -d trace_pool_alloc.etl
+#+END_EXAMPLE
+
+** Driver signing example
+
+#+BEGIN_EXAMPLE
+  copy C:\WinDDK\7600.16385.1\src\serial\serial\objchk_win7_amd64\amd64\wdfserial.sys c:\MyFPGA\
+  inf2cat /os:7_x64 /driver:c:\a21\MyFPGA\
+  signtool sign /v /a c:\a21\MyFPGA\myfpga.cat
+  signtool sign /v /a c:\a21\MyFPGA\myfpgaport.cat
+
+  digicertutil sign /kernelDriverSigning c:\a21\MyFPGA\myfpgauart.cat
+  rundll32 SETUPAPI.DLL,InstallHinfSection DefaultInstall 132 "c:\a21\auth\authentication.inf"
+
+  dpinst /C /F /SW /PATH c:\a21\MyFPGA\UART\
+  dpinst /SW /U c:\a21\MyFPGA\UART\MyFPGAUARTPort.INF
+#+END_EXAMPLE
+
+** Get the security privilege
+
+#+BEGIN_EXAMPLE
+whoami /priv
+or
+secedit /export /areas USER_RIGHTS /cfg OUTFILE.CFG
+#+END_EXAMPLE
+
+** Execture command under "system" account
+
+#+BEGIN_EXAMPLE
+psexec -i -s cmd.exe
+#+END_EXAMPLE
+
+** Clear all event logs (powershell)
+
+#+BEGIN_EXAMPLE
+   wevtutil el | Foreach-Object {wevtutil cl "$_"}
+#+END_EXAMPLE
+
+** Backing up ownership/ACLs and restoring
+
+   This example is for registry keys (similar for files)
+
+#+BEGIN_EXAMPLE
+
+Using setacl.exe
+----------------
+
+Take ownership:
+
+setacl -on hklm\working -ot reg -actn setowner -ownr "n:S-1-5-18" -rec yes > c:\tmp\t.log
+setacl -on hklm\working -ot reg -actn ace -ace "n:S-1-5-18;p:full;s:y;i:so,sc;m:set;w:dacl" -rec yes > c:\tmp\t.log
+
+Backup:
+
+setacl -on hklm\working\ -ot reg -actn list -lst "f:sddl;w:d,s,o,g;i:n;s:y" -bckp c:\tmp\nonworking.txt -rec yes > c:\tmp\t.log
+
+Restore:
+
+setacl -on hklm\working\ -ot reg -actn restore -lst "f:sddl;w:d,s,o,g;i:n;s:y" -bckp c:\tmp\working.txt -ignoreerr > c:\tmp\t.log
+
+
+Using subinacl.exe:
+-------------------
+(note that subinacl cannot handle wildcards in names)
+
+Take ownership:
+
+subinacl /noverbose /subkeyreg "HKEY_LOCAL_MACHINE\working" /SetOwner="NT Authority\System"
+subinacl /noverbose /subkeyreg "HKEY_LOCAL_MACHINE\working" /grant="NT Authority\System"=F
+
+Backup:
+
+subinacl /noverbose /outputlog=c:\tmp\subinacl_nonworking.txt  /subkeyreg "HKEY_LOCAL_MACHINE\working" /display=sddl
+
+Restore:
+
+subinacl /outputlog=c:\tmp\out.log /errorlog=c:\tmp\err.log /playfile c:\tmp\subinacl_working.txt
+
+#+END_EXAMPLE
+
+** Remote debugging
+   There are three ways you can debug user applications remotely
+   
+   - Using Visual Studio
+   - Using remote stub + windbg client
+
+     Useful when you have symbols remotely, runs full fledged windbg
+     locally and connects to the remote stub. Note that you will also
+     be able to browse the remote processes and attach to it.
+
+
+#+BEGIN_EXAMPLE
+##################################
+# On the target, run
+c:\Debuggers\dbgsrv -t tcp:port=12345
+
+# Alternatively you can execute this from your dev machine using psexec utility. Something like
+psexec "\\targetip" -d c:\Debuggers\dbgsrv -t tcp:port=12345
+
+##################################
+# On the dev station, run
+windbg -premote tcp:Port=12345,Server=remoteip
+#+END_EXAMPLE
+
+   - Using windbg server + windbg client
+
+     Useful when you have symbols remotely, so runs a full fledged
+     windbg server remotely and then connect to it from dev machine.
+     Note that you will not be able to browse processes and attach to
+     it.
+
+#+BEGIN_EXAMPLE
+##################################
+# On the target, run
+c:\Debuggers\windbg -server tcp:port=12345 -pd -pn your_process_name
+
+# Alternatively you can execute this from your dev machine using psexec utility. Something like
+psexec "\\targetip" -i -d c:\Debuggers\windbg -Q -server tcp:port=12345 -pd -pn your_process_name
+
+##################################
+# On the dev station, run
+windbg -remote tcp:Port=12345,Server=targetip
+#+END_EXAMPLE
+
+** Debugging process startup
+   
+   If a process is crashing during startup, you can use windbg to debug
+   it. How to do that is based on how the application is launched. 
+
+   
+   - If the application launch is part of another complex startup flow, use
+     "gflags.exe" to launch windbg (or VS) in startup (by going to "Image
+     File" tab and then filling "Image" and "Debugger" fields). See [[http://bugslasher.net/2011/03/26/how-to-debug-a-process-as-soon-as-it-starts-with-windbg-or-visual-studio-2010/][here]] for
+     more details.
+     
+
+   - If the application can be launched standalone, use windbg to launch and
+     debug.
+
+    #+BEGIN_EXAMPLE
+    windbg.exe notepad.exe
+    
+    or use windbg.exe and then use GUI to start the desired process.
+    #+END_EXAMPLE
+
+** Debugging DLL loading
+
+   To trace why certain DLL is loaded (or not loaded), you can use "loader
+   snaps" feature.
+
+   #+BEGIN_EXAMPLE
+   ##################################
+   gflags.exe /i notepad.exe +sls
+   windbg.exe notepad.exe
+   (then press "go" in windbg commandprompt)
+   (and remember to reset it later with "gflags.exe /i notepad.exe -sls")
+   ##################################
+   #+END_EXAMPLE
+
+   (if you are debugging driver co-installer, follow this this [[http://msdn.microsoft.com/en-us/library/windows/hardware/ff541047%2528v%3Dvs.85%2529.aspx][link]])
+
+** Debugging process hang
+
+   If the application is hung (not able to close), it is generally stuck at
+   kernel for some reason. One quick way to analyze it is using windbg +
+   local kernel debugging.
+
+   Following commands are in windbg prompt.
+
+   #+BEGIN_EXAMPLE
+   Find the process id
+   
+     !process 0 0
+   
+   Once you know the process id, get the details
+
+             !process fffffa80132d6450 f
+             lkd> !process fffffa80132d6450 f
+             PROCESS fffffa80132d6450
+                 SessionId: 2  Cid: 2548    Peb: 7fffffdc000  ParentCid: 1858
+                 DirBase: 212c96000  ObjectTable: fffff8a0281151a0  HandleCount:  88.
+                 Image: usbMonitor.exe
+                 VadRoot fffffa8006ee28f0 Vads 111 Clone 0 Private 1149. Modified 0. Locked 0.
+                 DeviceMap fffff8a00ba505c0
+                 Token                             fffff8a023181570
+                 ElapsedTime                       01:01:39.597
+                 UserTime                          00:00:00.000
+                 KernelTime                        00:00:00.000
+                 QuotaPoolUsage[PagedPool]         108272
+                 QuotaPoolUsage[NonPagedPool]      13328
+                 Working Set Sizes (now,min,max)  (2115, 50, 345) (8460KB, 200KB, 1380KB)
+                 PeakWorkingSetSize                2118
+                 VirtualSize                       57 Mb
+                 PeakVirtualSize                   58 Mb
+                 PageFaultCount                    2139
+                 MemoryPriority                    BACKGROUND
+                 BasePriority                      8
+                 CommitCharge                      1216
+              
+                     THREAD fffffa800d633060  Cid 2548.0754  Teb: 000007fffffde000 Win32Thread: fffff900c0102010 WAIT: (Executive) KernelMode Non-Alertable
+                         fffffa8009b9a448  Semaphore Limit 0x1
+                     IRP List:
+                         fffffa800d79fc10: (0006,03e8) Flags: 00060070  Mdl: 00000000
+                     Not impersonating
+                     DeviceMap                 fffff8a00ba505c0
+                     Owning Process            fffffa80132d6450       Image:         usbMonitor.exe
+                     Attached Process          N/A            Image:         N/A
+                     Wait Start TickCount      21004878       Ticks: 217043 (0:00:56:25.892)
+                     Context Switch Count      261            IdealProcessor: 1                 LargeStack
+                     UserTime                  00:00:00.000
+                     KernelTime                00:00:00.000
+                     Win32 Start Address usbMonitor!mainCRTStartup (0x000000013f33aaa8)
+                     Stack Init fffff8800c2ffc70 Current fffff8800c2ff480
+                     Base fffff8800c300000 Limit fffff8800c2f8000 Call 0
+                     Priority 10 BasePriority 8 UnusualBoost 0 ForegroundBoost 0 IoPriority 2 PagePriority 5
+             GetContextState failed, 0x80004001
+             Unable to get current machine context, HRESULT 0x80004001
+                     Child-SP          RetAddr           Call Site
+                     fffff880`0c2ff4c0 fffff800`030855f2 nt!KiSwapContext+0x7a
+                     fffff880`0c2ff600 fffff800`0309699f nt!KiCommitThreadWait+0x1d2
+                     fffff880`0c2ff690 fffff880`0552bc6c nt!KeWaitForSingleObject+0x19f
+                     fffff880`0c2ff730 fffff880`0554367f usbhub!UsbhAcquireFdoPnpLock+0x40
+                     fffff880`0c2ff770 fffff880`05545337 usbhub!UsbhAcquireApiLock+0x5f
+                     fffff880`0c2ff7b0 fffff880`055242d9 usbhub!UsbhIoctlGetNodeConnectionInfoExApi+0xf3
+                     fffff880`0c2ff840 fffff880`05523fdf usbhub!UsbhFdoDeviceControl+0x1a5
+                     fffff880`0c2ff8a0 fffff800`033ace67 usbhub!UsbhGenDispatch+0x7f
+                     fffff880`0c2ff8d0 fffff800`033ad6c6 nt!IopXxxControlFile+0x607
+                     fffff880`0c2ffa00 fffff800`0308ee53 nt!NtDeviceIoControlFile+0x56
+                     fffff880`0c2ffa70 00000000`76e5132a nt!KiSystemServiceCopyEnd+0x13 (TrapFrame @ fffff880`0c2ffae0)
+                     00000000`001cf238 000007fe`fcef9af9 ntdll!ZwDeviceIoControlFile+0xa
+                     00000000`001cf240 00000000`76cf5cff KERNELBASE!DeviceIoControl+0x75
+                     00000000`001cf2b0 000007fe`f034c7d5 kernel32!DeviceIoControlImplementation+0x7f
+                     00000000`001cf300 00000000`00467fa0 libusb_1_0!libusb_interrupt_transfer+0x2e45
+                     00000000`001cf308 00000000`00465fc0 0x467fa0
+                     00000000`001cf310 00000000`00465fc0 0x465fc0
+                     00000000`001cf318 00000000`0044e8c0 0x465fc0
+                     00000000`001cf320 00000000`001cf358 0x44e8c0
+                     00000000`001cf328 00000000`00000023 0x1cf358
+                     00000000`001cf330 00000000`001cf350 0x23
+                     00000000`001cf338 00000000`00000000 0x1cf350
+
+   
+   (NOTE: if the stack doesn't show proper function names, you will have to do
+          ".reload /f" or something equivalent to load the symbols)
+
+   Look at the process information to find out the reason why it might be hung.
+   Looking at stack and pending IRPs should give some clue.
+
+   In this case, we have an IRP pending. Get its details
+   
+       lkd> !irp fffffa800d79fc10
+       Irp is active with 7 stacks 7 is current (= 0xfffffa800d79fe90)
+        No Mdl: System buffer=fffffa8011aa4fc0: Thread fffffa800d633060:  Irp stack trace.  
+            cmd  flg cl Device   File     Completion-Context
+        [  0, 0]   0  0 00000000 00000000 00000000-00000000    
+        
+               		Args: 00000000 00000000 00000000 00000000
+        [  0, 0]   0  0 00000000 00000000 00000000-00000000    
+        
+               		Args: 00000000 00000000 00000000 00000000
+        [  0, 0]   0  0 00000000 00000000 00000000-00000000    
+        
+               		Args: 00000000 00000000 00000000 00000000
+        [  0, 0]   0  0 00000000 00000000 00000000-00000000    
+        
+               		Args: 00000000 00000000 00000000 00000000
+        [  0, 0]   0  0 00000000 00000000 00000000-00000000    
+        
+               		Args: 00000000 00000000 00000000 00000000
+        [  0, 0]   0  0 00000000 00000000 00000000-00000000    
+        
+               		Args: 00000000 00000000 00000000 00000000
+       >[  e, 0]   4  0 fffffa8009b99050 fffffa800bb53770 00000000-00000000    
+                      \Driver\usbhub
+               		Args: 00000023 00000023 00220448 00000000
+   
+   It looks like an IRP is pending in usbhub device. So likely culprit is usb drivers
+   (which is also confirmed by the call stack in process information above).
+   #+END_EXAMPLE
+
+** Application tracing
+   Generally there are 4 ways
+
+   - Use procmon
+
+     procmon from sysinternals. Limited on what it can trace etc.
+     Note that this is not API/function call level tracer
+
+   - Use logger.exe
+
+     This comes as part Windows debugging tools (along with
+     windbg). This allows us to trace at DLL / function call level
+
+   - Use SpyStudio
+
+     This is a commercial tool that allows to trace an application's
+     operations and compare etc
+     http://www.nektra.com/products/spystudio-api-monitor/
+
+   - Use a debugger
+
+     windbg etc : set breakpoint, disassemble etc
+
+** Windbg tips
+   - Check what is running on all the cores: !running -ti
+   - Using grep or other external commands: .shell -ci "!process 0 0" grep -i " Image:" | c:\msys2\bin\sort -k2 | uniq
+   - Search all the threads for call stack containing a specific driver: !stacks 0x2 yourdrivername
+   - VM stats: !vm 1
+   - For deadlocks: !locks
+   - Switching to a specific thread context: .thread threadaddr
+   - Find who freed a given pointer (when verifier is enabled): 
+   #+BEGIN_EXAMPLE
+   ##################################
+   !verifier 80 address
+     
+   Log of recent kernel pool Allocate and Free operations:
+    
+   There are up to 0x10000 entries in the log.
+    
+   Parsing 0x0000000000010000 log entries, searching for address 0xffffcf8001602fa8.
+    
+    
+   ======================================================================
+   Pool block ffffcf8001602f70, Size 0000000000000090, Thread ffffe00004001880
+   fffff8033b0f8bea nt!VfFreePoolNotification+0x4a
+   fffff8033ad1a1fd nt!ExFreePoolWithTag+0xf2d
+   fffff8000031d2b4 VerifierExt!ExFreePoolWithTag_wrapper+0x10
+   fffff8033b0ea128 nt!VerifierExFreePoolWithTag+0x44
+   fffff800030ed44a MyIPC!delete_ipc+0xce
+   fffff800030ecb8a MyIPC!ThreadCreatedDeleted+0x3e
+   fffff8033aead70b nt!PspExitThread+0x3b3
+   fffff8033af36334 nt!KiSchedulerApcTerminate+0x18
+   fffff8033ab2e37a nt!KiDeliverApc+0x2fa
+   fffff8033abdabc0 nt!KiInitiateUserApc+0x70
+   fffff8033abe155a nt!KiSystemServiceExit+0x9f
+   Parsed entry 0000000000010000/0000000000010000...
+   Finished parsing all pool tracking information.
+   ##################################
+   #+END_EXAMPLE
+   
+   - Dump custom structures using windbg script
+
+   #+BEGIN_EXAMPLE
+   ##################################
+     (Below example is dumping uthash table)
+     r? $t0 = (MyIPC!ThreadInfo *)MyIPC!threadInfo; .if (@$t0) { r? $t2 = @@c++(@$t0->hh.tbl->num_items); .printf /D "Total items in hash table (at %p) is %d\n", @$t0, @$t2; .while (@$t0){ r? $t2 = @@c++(@$t0->tid); .printf "tid %x\n", @$t2; r? $t0 = (MyIPC!ThreadInfo *)@@c++(@$t0->hh.next); } }
+     
+     Or, put it in a script file
+
+     .block
+     {
+         r? $t0 = (MyIPC!ThreadInfo *)MyIPC!threadInfo;
+         .if (@$t0)
+          {
+              r? $t2 = @@c++(@$t0->hh.tbl->num_items);
+              .printf /D "Total items in hash table (at %p) is %d\n", @$t0, @$t2;
+              .while (@$t0)
+               {
+                   r? $t2 = @@c++(@$t0->tid);
+                   .printf "tid %x\n", @$t2;
+                   r? $t0 = (MyIPC!ThreadInfo *)@@c++(@$t0->hh.next);
+               }
+          }
+     }
+
+   After that use
+   Print all the tids in it, sort, find unique etc
+   
+   .shell -ci "$$>< c:/path/to/script.txt" c:\msys2\bin\sort -k2 -n | uniq -c
+
+   ##################################
+   #+END_EXAMPLE
+
+   - Dump IPC server names
+   #+BEGIN_EXAMPLE
+   ##################################
+   .block
+   {
+       r? $t0 = (MyIPC!ThreadInfo *)MyIPC!threadInfo;
+       .if (@$t0)
+        {
+            r? $t2 = @@c++(@$t0->hh.tbl->num_items);
+            .printf /D "Total items in hash table (at %p) is %d\n", @$t0, @$t2;
+            .while (@$t0)
+             {
+                 r? $t2 = @@c++(@$t0->tid);
+                 .printf "tid %x\n", @$t2;
+                 r? $t3 = @@c++(@$t0->ipc);
+                 !pool @$t3
+                 $$.printf "(and threadinfo: %p)\n", @$t3;
+                 r? $t0 = (MyIPC!ThreadInfo *)@@c++(@$t0->hh.next);
+             }
+        }
+   }
+   ##################################
+   #+END_EXAMPLE  
+
+* Bootup
+  
+  - Boot sequece
+    
+    BIOS -> MBR -> VBR -> BootMgr(uses BCD) -> winload.exe -> ntoskrnl.exe
+
+  - MBR
+
+    - Loaded by BIOS at physical address 0x7C00 and DL set to the
+      driver number the MBR came from.
+
+    - BIOS jumps to beginning of loaded MBR (i.e., at 0x7C00)
+
+    - MBR finds the active partition and loads the VBR from it
+
+    - Jump to VBR code
+
+    - Windows MBR
+
+      - First partition could start at offset sector 63 or 1 MiB
+        aligned
+
+      - There are two kind of "boot" attributes for a given partition:
+        The one that contains actual operating system is called "boot"
+        partition and the one that execution is passed to initially is
+        called "active".
+
+	"boot" partition generally contains bootmgr.exe, BCD database,
+        bootstat.dat (aka Boot Status Data which contains whether it
+        was shutdown properly etc). Note that there is one
+        bootstat.dat for Windows OS itselft (one for bootmgr.exe and
+        one for Windows OS).
+
+      - More info here [fn:2] 
+
+  - Volume Boot Record (VBR)
+
+    First sector of the partition (like first sector of the disk is
+    partition table). It contains both data and code. Primary
+    functionality is to find the kernel or next phase of boot loader
+    (winload.exe in Windows 7,8 etc), load it and pass the control.
+
+    The file system information is usually contained in BIOS Parameter
+    Block (BPB) [fn:7] [fn:8] which is part of VBR.
+
+    The 9 sectors following first sector contains "bootmgr" (and
+    "ntldr") interface code. This will find and load the "bootmgr"
+    from file system and pass control over to it.
+
+    "bcdedit.exe" command can be used to find the Windows boot manager
+    partition. Generally it is located on a separate boot
+    partition. That would in turn use BCD database to find the
+    available OSes and show the OS selection menu to the user if
+    required and then pass control to the chosen OS.
+    
+
+  - winload.exe
+
+    - Loads ntoskrnl.exe, hal.dll etc
+
+    - Loads necessary modules
+
+    - Enables paging
+
+    - PsLoadedModuleList?
+
+  - ntoskrnl.exe
+
+    - Main Windows kernel binary
+
+    - KiSystemStartup()
+
+    - Build page tables
+
+    - Load hal.dll and initialize
+
+    - load SERVICE_BOOT_START drivers
+
+  - WinKexec
+
+    To do a fast boot into Windows or Linux from a running Windows
+    system [fn:3]
+
+  - References 
+
+    Windows Rootkit [fn:10]
+
+    Windows NT 6 Boot process [fn:9]
+
+    BSD [fn:1]
+
+    BCDEdit options [fn:5]
+
+    Windows debugging via vmware and IDA Pro [fn:6]
+  
+* PnP manager
+* Shell
+  [fn:4]
+
+* Misc
+** Reparse points
+   
+   A file or directory can contain "reparse point". The reparse point
+   stores user defined data, which can be used for various purposes.
+   The format of data stored in reparse point is determined by the
+   application. The application, along with the data, stores an unique
+   "reparse tag". Later, this data can be interpreted by the
+   application itself or a file system filter driver.
+
+   When a file is opened, the system tries to find a file system
+   filter driver for this reparse point. If found, the filter will
+   operate based on the data stored in the reparse point. If a filter
+   is not found, the open fails.
+
+   Microsoft reserves few reparse tags (which cannot be used by
+   others).
+
+   For example, NTFS "junction point", "symbolic links" etc use
+   reparse point. Below is an example that shows reparse point data
+   (using "fsutil" utility)
+
+   Note that symbolic links can point to either directory or file but
+   junction points are limited to just directories. Though symbolic
+   link feature is available from Window Vista+, junction points are
+   available from Windows 2000.
+
+   References: [fn:12], [fn:11]
+
+#+BEGIN_EXAMPLE
+D:\scratch\tt>echo hello world > hellofile
+
+D:\scratch\tt>type hellofile
+hello world
+
+D:\scratch\tt>md hellodir
+
+D:\scratch\tt>mklink /d hellodir_symlink hellodir
+symbolic link created for hellodir_symlink <<===>> hellodir
+
+D:\scratch\tt>mklink /j hellodir_junction hellodir
+Junction created for hellodir_junction <<===>> hellodir
+
+D:\scratch\tt>mklink hellofile_symlink hellofile
+symbolic link created for hellofile_symlink <<===>> hellofile
+
+D:\scratch\tt>fsutil reparsepoint query hellodir
+Error:  The file or directory is not a reparse point.
+
+D:\scratch\tt>fsutil reparsepoint query hellodir_junction
+Reparse Tag Value : 0xa0000003
+Tag value: Microsoft
+Tag value: Name Surrogate
+Tag value: Mount Point
+Substitue Name offset: 0
+Substitue Name length: 68
+Print Name offset:     70
+Print Name Length:     60
+Substitute Name:       \??\D:\scratch\tt\hellodir
+Print Name:            D:\scratch\tt\hellodir
+
+Reparse Data Length: 0x0000008c
+Reparse Data:
+0000:  00 00 44 00 46 00 3c 00  5c 00 3f 00 3f 00 5c 00  ..D.F.<.\.?.?.\.
+0010:  44 00 3a 00 5c 00 63 00  72 00 69 00 6d 00 73 00  D.:.\.c.r.i.m.s.
+0020:  6f 00 6e 00 5c 00 73 00  63 00 72 00 61 00 74 00  o.n.\.s.c.r.a.t.
+0030:  63 00 68 00 5c 00 74 00  74 00 5c 00 68 00 65 00  c.h.\.t.t.\.h.e.
+0040:  6c 00 6c 00 6f 00 64 00  69 00 72 00 00 00 44 00  l.l.o.d.i.r...D.
+0050:  3a 00 5c 00 63 00 72 00  69 00 6d 00 73 00 6f 00  :.\.c.r.i.m.s.o.
+0060:  6e 00 5c 00 73 00 63 00  72 00 61 00 74 00 63 00  n.\.s.c.r.a.t.c.
+0070:  68 00 5c 00 74 00 74 00  5c 00 68 00 65 00 6c 00  h.\.t.t.\.h.e.l.
+0080:  6c 00 6f 00 64 00 69 00  72 00 00 00              l.o.d.i.r...
+
+D:\scratch\tt>fsutil reparsepoint query hellodir_symlink
+Reparse Tag Value : 0xa000000c
+Tag value: Microsoft
+Tag value: Name Surrogate
+Tag value: Symbolic Link
+
+Reparse Data Length: 0x0000002c
+Reparse Data:
+0000:  10 00 10 00 00 00 10 00  01 00 00 00 68 00 65 00  ............h.e.
+0010:  6c 00 6c 00 6f 00 64 00  69 00 72 00 68 00 65 00  l.l.o.d.i.r.h.e.
+0020:  6c 00 6c 00 6f 00 64 00  69 00 72 00              l.l.o.d.i.r.
+
+D:\scratch\tt>fsutil reparsepoint query hellofile_symlink
+Reparse Tag Value : 0xa000000c
+Tag value: Microsoft
+Tag value: Name Surrogate
+Tag value: Symbolic Link
+
+Reparse Data Length: 0x00000030
+Reparse Data:
+0000:  12 00 12 00 00 00 12 00  01 00 00 00 68 00 65 00  ............h.e.
+0010:  6c 00 6c 00 6f 00 66 00  69 00 6c 00 65 00 68 00  l.l.o.f.i.l.e.h.
+0020:  65 00 6c 00 6c 00 6f 00  66 00 69 00 6c 00 65 00  e.l.l.o.f.i.l.e.
+#+END_EXAMPLE
+
+** Access Control
+   
+   There are two parts to access control managment in Windows: Access
+   Tokens and Security Descriptors. Access Tokens contains information
+   about the logged in user and Security Descriptors contain
+   information about a specific object's level of protection.
+
+   When a user logs in, the system generates an "access token" that
+   contains user's SID and his group memberships. It also contains
+   list of privileges that use has (by virtue of his SID and group
+   memberships). This access token is inherited by every process that
+   is created in this user session. This access token is used by
+   system to validte the accesses (to various objects in the system)
+   done by the processes in this user session.
+
+
+   - Security Privileges
+   - Security Descriptors
+     
+     When an object is created the system assigns a security
+     descriptor to it, which contains owner information. In addition
+     to that, it also contains
+
+     - Discretionary access control list (DACL)
+     - System access control list (SACL)
+      
+     DACL identifies the users and groups allowed/denied access to the
+     object. It is done by using Access Control Entries (ACEs). Each
+     ACE contains a SID and the set of rights for that SID. Note that
+     the SID can identify a user, group or logon session (specifically
+     "logon sid" which is valid until user logs off).
+
+     SACL is used to generate audit messages when an attempt is made
+     to access the object.
+
+*** Access Tokens
+    
+    Acess token is an object that describes the security context of a
+    process (or thread). This is generated when the user logs on.
+
+    It contains the following among others:
+
+    - SID (Security Identifier) of the user account
+    - SIDs for the groups which user belongs to
+    - A logon SID (identifies and valid for current logon session)
+    - List of privileges
+    - Default DACL (used when objects are created without providing
+      security descriptor)
+    - Whether the token is primary or impersonoation token
+
+    Every process has a primary token. Threads use this primary token
+    when interacting with the system. But each thread can also have an
+    impersonoation token (in addition to primary token) which is used
+    to interact with objects using a different client account.
+
+    Below is an example of dumping process security tokens
+
+#+BEGIN_EXAMPLE
+
+D:\scratch>accesschk -f -p emacs.exe
+
+Accesschk v5.11 - Reports effective permissions for securable objects
+Copyright (C) 2006-2012 Mark Russinovich
+Sysinternals - www.sysinternals.com
+
+[5820] emacs.exe
+  RW BUILTIN\Administrators
+  RW NT AUTHORITY\SYSTEM
+
+  Token security:
+  RW BUILTIN\Administrators
+  RW NT AUTHORITY\SYSTEM
+  RW BUILTIN\S-1-5-5-0-135492-Administrators
+
+  Token contents:
+    User:
+      AGI\psureshkumar
+    Groups:
+      AGI\Domain Users                                 MANDATORY
+      Everyone                                         MANDATORY
+      BUILTIN\Administrators                           OWNER,MANDATORY
+      BUILTIN\Performance Log Users                    MANDATORY
+      BUILTIN\Users                                    MANDATORY
+      NT AUTHORITY\INTERACTIVE                         MANDATORY
+      CONSOLE LOGON                                    MANDATORY
+      NT AUTHORITY\Authenticated Users                 MANDATORY
+      NT AUTHORITY\This Organization                   MANDATORY
+      BUILTIN\S-1-5-5-0-135492-Administrators          LOGONID,MANDATORY
+      LOCAL                                            MANDATORY
+      AGI\IndiaAPD_Chennai                             MANDATORY
+      AGI\Confluence_Users                             MANDATORY
+      AGI\Microsoft Office                             MANDATORY
+      AGI\Agile PLM Users                              MANDATORY
+      AGI\LV_SCM_REPLICATION_READERS                   MANDATORY
+      AGI\Agile SSO Users                              MANDATORY
+      AGI\Corporate Cardholders                        MANDATORY
+      AGI\PWA - ProjectViewers                         MANDATORY
+      AGI\India_Alpha_OS_Kernel                        MANDATORY
+      AGI\_ APD_ Project Web Access Resources          MANDATORY
+      AGI\CVS-OS-Development                           MANDATORY
+      AGI\DEVDATA_READERS                              MANDATORY
+      AGI\PVCS_TRACKER_USERS                           MANDATORY
+      Mandatory Label\High Mandatory Level             INTEGRITY
+    Privileges:
+      SeLockMemoryPrivilege                            DISABLED
+      SeIncreaseQuotaPrivilege                         DISABLED
+      SeSecurityPrivilege                              DISABLED
+      SeTakeOwnershipPrivilege                         DISABLED
+      SeLoadDriverPrivilege                            DISABLED
+      SeSystemProfilePrivilege                         DISABLED
+      SeSystemtimePrivilege                            DISABLED
+      SeProfileSingleProcessPrivilege                  DISABLED
+      SeIncreaseBasePriorityPrivilege                  DISABLED
+      SeCreatePagefilePrivilege                        DISABLED
+      SeBackupPrivilege                                DISABLED
+      SeRestorePrivilege                               DISABLED
+      SeShutdownPrivilege                              DISABLED
+      SeDebugPrivilege                                 DISABLED
+      SeSystemEnvironmentPrivilege                     DISABLED
+      SeChangeNotifyPrivilege                          ENABLED
+      SeRemoteShutdownPrivilege                        DISABLED
+      SeUndockPrivilege                                DISABLED
+      SeManageVolumePrivilege                          DISABLED
+      SeImpersonatePrivilege                           ENABLED
+      SeCreateGlobalPrivilege                          ENABLED
+      SeIncreaseWorkingSetPrivilege                    DISABLED
+      SeTimeZonePrivilege                              DISABLED
+      SeCreateSymbolicLinkPrivilege                    DISABLED
+#+END_EXAMPLE
+
+** Registry
+   
+   Registry is a Windows provided "database" used to store
+   configuration data of system and applications. The registry is
+   managed by means of "keys" and "values".
+   
+   Windows contains the following root keys:
+
+   HKEY_CLASSES_ROOT, HKEY_CURRENT_CONFIG,
+   HKEY_CURRENT_USER, HKEY_CURRENT_USER_LOCAL_SETTINGS,
+   HKEY_LOCAL_MACHINE, HKEY_PERFORMANCE_DATA,
+   HKEY_PERFORMANCE_NLSTEXT, HKEY_PERFORMANCE_TEXT, HKEY_USERS
+
+   The system keeps these predefined hives/keys open, so these keys
+   can be used in calls to "RegOpenKeyEx()" etc.
+
+   Note that these handles/keys are a view presented to the
+   process. The actual storage is spread across multiple files.  They
+   are generally located at "%SYSTEMROOT%\System32\Config".
+    
+   The mapping of registry hives to files:
+
+   | Registry Hive                  | Actual file                                              |
+   |--------------------------------+----------------------------------------------------------|
+   | HKEY_CURRENT_CONFIG            | Windows\System32\config\SYSTEM                           |
+   | HKEY_CURRENT_USER              | Mapped from HKEY_USERS                                   |
+   | HKEY_LOCAL_MACHINE\SAM         | Windows\System32\config\SAM                              |
+   | HKEY_LOCAL_MACHINE\Security    | Windows\System32\config\SECURITY                         |
+   | HKEY_LOCAL_MACHINE\Software    | Windows\System32\config\SOFTWARE                         |
+   | HKEY_LOCAL_MACHINE\System      | Windows\System32\config\SYSTEM                           |
+   | HKEY_LOCAL_MACHINE\BCD00000000 | Boot\BCD                                                 |
+   | HKEY_USERS\.DEFAULT            | Windows\System32\config\DEFAULT                          |
+   | HKEY_USERS\*                   | Windows\ServiceProfiles\NetworkService\NTUSER.DAT        |
+   |                                | Windows\ServiceProfiles\LocalService\NTUSER.DAT          |
+   |                                | Users\Suresh\NTUSER.DAT                             |
+   |                                | Users\Suresh\AppData\Local\Microsoft\Windows\UsrClass.dat |
+
+   Note that HKEY_USERS\.DEFAULT is not default user profile, it is
+   the profile for system account. The actual user default profile is
+   located at Users\Default\NTUSER.DAT
+
+   Executing below command should give the current hive mapping:
+
+#+BEGIN_EXAMPLE
+reg query "hklm\system\currentcontrolset\control\hivelist"
+
+HKEY_LOCAL_MACHINE\system\currentcontrolset\control\hivelist
+    \REGISTRY\MACHINE\HARDWARE    REG_SZ
+    \REGISTRY\MACHINE\BCD00000000    REG_SZ    \Device\HarddiskVolume1\Boot\BCD
+    \REGISTRY\MACHINE\SYSTEM    REG_SZ    \Device\HarddiskVolume1\Windows\System32\config\SYSTEM
+    \REGISTRY\MACHINE\SOFTWARE    REG_SZ    \Device\HarddiskVolume1\Windows\System32\config\SOFTWARE
+    \REGISTRY\MACHINE\SECURITY    REG_SZ    \Device\HarddiskVolume1\Windows\System32\config\SECURITY
+    \REGISTRY\USER\.DEFAULT    REG_SZ    \Device\HarddiskVolume1\Windows\System32\config\DEFAULT
+    \REGISTRY\MACHINE\SAM    REG_SZ    \Device\HarddiskVolume1\Windows\System32\config\SAM
+    \REGISTRY\USER\S-1-5-20    REG_SZ    \Device\HarddiskVolume1\Windows\ServiceProfiles\NetworkService\NTUSER.DAT
+    \REGISTRY\USER\S-1-5-19    REG_SZ    \Device\HarddiskVolume1\Windows\ServiceProfiles\LocalService\NTUSER.DAT
+    \Registry\User\S-1-5-21-817217900-305371882-3761053680-1002    REG_SZ    \Device\HarddiskVolume1\Users\Suresh\NTUSER.DAT
+    \Registry\User\S-1-5-21-817217900-305371882-3761053680-1002_Classes    REG_SZ    \Device\HarddiskVolume1\Users\Suresh\AppData\Local\Microsoft\Windows\UsrClass.dat
+#+END_EXAMPLE
+
+   Hives and their functionality:
+
+   - HKEY_CLASSES_ROOT
+
+     This is mainly used for backward compatibility with 16 bit
+     Windows. Class registration and file extension association are
+     defined in this key. 
+
+     Note that actual information is kept under
+     "HKEY_LOCAL_MACHINE\Software\Classes" (for all users in the
+     system) and "HKEY_CURRENT_USER\Software\Classes" (for the current
+     user, overrides things from HKLM). HKEY_CLASSES_ROOT is a merged
+     view of the above keys.
+     
+     More info here [fn:13]
+
+   - HKEY_CURRENT_CONFIG
+
+     Contains information about the current hardware configuration of
+     the system. This is an alias to
+     "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Hardware
+     Profiles\Current"
+
+     Note that this contains the differences w.r.t standard
+     configuration.
+
+   - HKEY_CURRENT_USER
+     
+     Contains preferences of the current user (like environment
+     variable etc). This is used for storing "current" user specific
+     preference. This is an alias to the actual user key under
+     HKEY_USERS (which actually contains preferences related to all
+     the users in the system).
+
+     Note that this is mapped per process, so the first thread in the
+     process that opens this key will trigger this mapping for that
+     process. The security context of that thread will be used to find
+     the "current user". If there is no valid hive in that security
+     context, "HKEY_USERS\.Default" will be mapped. 
+
+     Most of the the entries under HKEY_CURRENT_USER is also stored
+     under roaming user profile. HKEY_CURRENT_USER_LOCAL_SETTINGS
+     should be used if an entry should not go into roaming user
+     profile.
+
+   - HKEY_CURRENT_USER_LOCAL_SETTINGS
+     
+     Contains entries that are specific to current user but are not
+     part of roaming user profile and are specific to local machine.
+
+   - HKEY_LOCAL_MACHINE
+     
+     Contains entries that describle the local physical machine (PnP
+     configuration, hardware information, software information etc)
+
+   - HKEY_PERFORMANCE_DATA
+
+     Used to collect performance data. This is not a real key with
+     data stored but used as trigger point for collecting data.
+
+   - HKEY_PERFORMANCE_NLSTEXT
+     
+     Performance data keys in the local language.
+
+   - HKEY_PERFORMANCE_TEXT
+
+     Performance data keys in US English.
+
+   - HKEY_USERS
+
+     Contains user configuration data and a default configuration for
+     new users.
+* WinPE based bootable OS
+  
+  - Windows PE based boot/runtime environment
+  - Instructions
+    - Create a Windows PE image by using ICE of Windows Embedded
+      Standard 7 or 8
+    - Mount the boot.wim image
+    - Use "Dism /Add-Driver", "Dism /Add-Package" etc to add custom
+      drivers, packages etc into that image
+    - Unmount the image
+
+    - Example commands
+
+      - Mount image
+
+#+BEGIN_EXAMPLE	
+        Dism /Mount-wim /WimFile:"C:\myos\sources\boot.wim" /index:1 /MountDir:"C:\myos_mount"
+	Dism /Image:"C:\myos_mount" /Set-ScratchSpace:512
+#+END_EXAMPLE	
+
+      - Install drivers/packages and copy files
+
+#+BEGIN_EXAMPLE	
+        Dism /Image:"C:\myos_mount" /Add-Driver /Driver:"d:\drivers\Net\pci_ven_8086&dev_1502&subsys_00008086\e1c62x64.inf"
+	Dism /Image:"C:\myos_mount" /Add-Driver /Driver:"d:\drivers\Net\pci_ven_10ec&dev_8168&rev_07\rt64win7.inf"
+
+	Dism /Image:"C:\myos_mount" /Add-Package /PackagePath:"c:\Program Files (x86)\Windows Embedded 8 Standard\Toolset\Windows Deployment Tools\Windows Preinstallation Environment\x86\WinPE_OCs\WinPE-NetFx4.cab"
+	Dism /Image:"C:\myos_mount" /Add-Package /PackagePath:"c:\Program Files (x86)\Windows Embedded 8 Standard\Toolset\Windows Deployment Tools\Windows Preinstallation Environment\x86\WinPE_OCs\WinPE-PowerShell3.cab"
+	Dism /Image:"C:\myos_mount" /Add-Package /PackagePath:"c:\Windows Embedded Catalog\6.2\9200.16384\x86\modules\Driver\Microsoft-Windows-Embedded-INF-mf~31bf3856ad364e35~x86~~6.2.9200.16384.cab"
+	Dism /Image:"C:\myos_mount" /Add-Package /PackagePath:"c:\Program Files (x86)\Windows Embedded 8 Standard\Toolset\Windows Deployment Tools\Windows Preinstallation Environment\x86\WinPE_OCs\WinPE-DismCmdlets.cab"
+	Dism /Image:"C:\myos_mount" /Add-Package /PackagePath:"c:\Program Files (x86)\Windows Embedded 8 Standard\Toolset\Windows Deployment Tools\Windows Preinstallation Environment\x86\WinPE_OCs\WinPE-HTA.cab"
+	Dism /Image:"C:\myos_mount" /Add-Package /PackagePath:"c:\Program Files (x86)\Windows Embedded 8 Standard\Toolset\Windows Deployment Tools\Windows Preinstallation Environment\x86\WinPE_OCs\WinPE-StorageWMI.cab"
+	Dism /Image:"C:\myos_mount" /Add-Package /PackagePath:"c:\Program Files (x86)\Windows Embedded 8 Standard\Toolset\Windows Deployment Tools\Windows Preinstallation Environment\x86\WinPE_OCs\WinPE-Scripting.cab"
+	Dism /Image:"C:\myos_mount" /Add-Package /PackagePath:"c:\Program Files (x86)\Windows Embedded 8 Standard\Toolset\Windows Deployment Tools\Windows Preinstallation Environment\x86\WinPE_OCs\WinPE-WMI.cab"
+
+	copy d:\bin\dd.exe c:\myos_mount\Windows\System32\
+	copy d:\source\tools\hq\hq.exe c:\myos_mount\Windows\System32\
+	copy d:\source\tools\hq\inputs.3.2.7.cfg c:\myos_mount\Windows\System32\inputs.3.1.7.cfg
+	copy d:\source\tools\hq\inputs.3.2.7.cfg c:\myos_mount\Windows\System32\inputs.3.2.7.cfg
+	copy d:\source\libraries\PlatformIO\*.dll c:\myos_mount\Windows\System32\
+#+END_EXAMPLE
+
+      - Install TightVNC, export its registry configuration and
+        executables to \tmp\TightVNC, then execute the following
+        command:
+
+#+BEGIN_EXAMPLE
+	xcopy.exe /s c:\tmp\TightVNC "c:\myos_mount\Program Files\TightVNC\"
+#+END_EXAMPLE
+
+      - Create and copy Unattend.xml to c:/myos_mount if needed
+
+      - Copy sysinternals suite
+
+#+BEGIN_EXAMPLE
+	xcopy.exe /s c:\tmp\Sysinternals\*.* "c:\myos_mount\Program Files\Sysinternals\"
+#+END_EXAMPLE
+
+      - Edit "c:/myos_mount/Windows/System32/startnet.cmd" and
+        add the custom startup commands
+
+      - Load WinPE registry and edit things if required
+
+#+BEGIN_EXAMPLE
+	reg load HKLM\WinPE_SYSTEM c:\myos_mount\Windows\System32\config\SYSTEM
+        reg load HKLM\WinPE_SOFTWARE c:\myos_mount\Windows\System32\config\SOFTWARE
+
+        regedit (modify the loaded reg values under HKLM\WinPE_{SYSTEM,SOFTWARE} if needed)
+
+	reg unload HKLM\WinPE_SOFTWARE
+	reg unload HKLM\WinPE_SYSTEM
+#+END_EXAMPLE
+
+      - Unmount the wim file
+
+#+BEGIN_EXAMPLE
+        Dism /Unmount-Wim /MountDir:"C:\myos_mount" /commit
+#+END_EXAMPLE
+      
+      - Optionally make an ISO
+
+#+BEGIN_EXAMPLE
+	oscdimg.exe -u2 -h -m -Myos -b"d:\source\myos\image\Boot\etfsboot.com" "d:\source\myos\image" d:\source\myos\release\Myos.iso
+#+END_EXAMPLE
+
+      - Make a bootable USB device
+	
+	- Create a partition in the USB device
+	  
+	  (careful with the disk number)
+
+#+BEGIN_EXAMPLE
+	  diskpart
+	  select disk 1
+	  clean
+	  create partition primary
+	  select partition 1
+	  active
+	  format fs=fat32 quick
+	  assign
+	  exit
+#+END_EXAMPLE
+
+	- Copy the myos files into it
+
+#+BEGIN_EXAMPLE
+	  xcopy c:\myos\*.* /s /e /f H:\
+#+END_EXAMPLE
+
+* Windows setup internals
+** Background
+  
+   Windows installation is done through multiple phases: WindowsPE,
+   offlineServicing, specialize, generalize, auditSystem, auditUser
+   and oobeSystem. Each phase does certain specific tasks. See here
+   for information [fn:14].
+
+   Out of which, our interest is in the following phases: WindowsPE,
+   offlineServicing, specialize, oobeSystem.
+
+   - WindowsPE
+
+     This is the phase where Windows installation is started
+     (generally via DVD or bootable USB disk) in Windows PE
+     environment. This sets up disk partition etc, then applies
+     Windows image (aka "install.wim") into OS partition (aka
+     C:). "install.wim" contains basic Windows image.
+
+   - offlineServicing
+
+     Phase where various additional packages, drivers, updates etc are
+     installed. This is also done when in Windows PE environment.
+
+   - specialize
+
+     This is the phase where hardware specific configuration is
+     done. This is done when Windows image boots for the first time
+     (i.e., after WindowsPE and offlineServicing phases).
+
+   - oobeSystem
+
+     During this phase various settings like Windows Shell (aka
+     explorer.exe stuff), user accounts, locale settings etc.
+
+   These phases can be automated using "AutoUnattend.xml" files. The
+   idea is to use "Image Configuration Editor" (ICE) in a development
+   machine and automate most of these tasks. ICE outputs an XML file
+   called "AutoUnattend.xml" which can be fed as input to various
+   installation phases described above. Those phases will use
+   information from this XML file rather than asking user. If we want
+   a truly unattended installation, AutoUnattend.xml file should be
+   carefully crafted to make sure there are no questions left
+   unanswered (setup will ask user for information if it is missing in
+   the XML file).
+
+** Offline Windows Installation
+
+   The objective here is to do the "WindowsPE", "offlineServicing",
+   "specialize" and "oobeSystem" phases completely offline.
+
+   We can write a (PowerShell) script that is going to automate the whole
+   process. "WindowsPE" and "offlineServicing" phases can be automated by
+   using Microsoft provided tool ("dism.exe"). The "specialize" and
+   "oobeSystem" phases will require "custom steps". The "custom steps" will
+   observe/capture the changes done during the install on real hardware and
+   repeat it offline.
+
+** Image creation (manual)
+   
+   This section describes the steps needed to create the image
+   manually. Most of these steps can be scripted.
+
+   Note that you should use "dism.exe" tool that comes with "Windows
+   Embedded Standard 8" toolkit (In default install you can find it
+   here: "C:\Program Files (x86)\Windows Embedded 8
+   Standard\Toolset\Windows Deployment Tools\Deployment
+   Tools\amd64\DISM"). The development machine also contains a
+   "dism.exe" and that should not be used.
+   
+   - Create a "Windows Installable Image" using Image Configuration
+     Editor (ICE).
+
+     - Open ICE editor
+
+     - Select the modules/packages needed for the image, do other
+       configuration as needed
+
+     - Finally, go to "Tools" --> "Create Media" --> "Create IBW Image
+       From Configuration" and choose a destination folder (for
+       example "d:\WindowsEmbedded8_DVD"). Note that
+       you can also choose USB device as long as the device is
+       available during next phase(s) of this process.
+
+   - Open a command prompt and set the appropriate path
+
+#+BEGIN_EXAMPLE
+set PATH=%PROGRAMFILES(X86)%\Windows Embedded 8 Standard\Toolset\Windows Deployment Tools\Deployment Tools\amd64\DISM;%PATH%
+rem make sure it points to the correct dism.exe
+where dism.exe
+#+END_EXAMPLE
+
+   - Create VHD file that is going to contain Windows OS image
+#+BEGIN_EXAMPLE
+diskpart
+create vdisk file="d:\scratch\WindowsOS.vhd" maximum=7168 type=expandable
+select vdisk file="d:\scratch\WindowsOS.vhd"
+attach vdisk
+clean
+create partition primary
+select partition 1
+active
+format fs=ntfs quick
+assign letter=q:
+exit
+#+END_EXAMPLE
+
+  - Install Windows image created using ICE into the VHD ("WindowsPE" phase)
+#+BEGIN_EXAMPLE
+dism /apply-image /imagefile:"d:\scratch\WindowsEmbedded8_DVD\sources\install.wim" /index:1 /applydir:q:\
+rem Note that "install.wim" is the one that comes from Windows Embedded DVD as "c:\windows embedded catalog\6.2\9200.16384\amd64\modules\product\EmbeddedCore64~31bf3856ad364e35~amd64~~6.2.9200.16384.wim" (it just gets renamed to install.wim)
+#+END_EXAMPLE
+
+  - Install the packages ("offlineServicing" phase)
+
+#+BEGIN_EXAMPLE
+dism /Image:q: /Apply-Unattend:"d:\scratch\WindowsEmbedded8_DVD\AutoUnattend.xml"
+#+END_EXAMPLE
+
+  - Apply other changes
+
+    - "spcialize" phase and "oobeSystem" phase
+
+
+  - Detach the VHD
+
+#+BEGIN_EXAMPLE
+diskpart
+select vdisk file="d:\scratch\WindowsOS.vhd"
+detach vdisk
+exit
+#+END_EXAMPLE
+** Image capture
+  - Boot the machine using WinPE
+
+  - Dump disk into vhd using vhdcapture tool
+
+    Boot into the system using WinPE. And in the WinPE commandline, execute
+    the following commands
+
+#+BEGIN_EXAMPLE
+
+    rem Mount the network share containing vhdcapture tools
+    net use z: "\\computername\share" * /u:"yourusername"
+
+    rem Capture the disk 0 partition 0 using vhdcapture tool (assuming disk0part0 is what you want to capture)
+    rem use "VHDCapture.exe list" to get list of disks/partitions available for capturing
+    z:\bin\vhdtools\VHDToolsx86\VHDCapture.exe capture -savepath:"\\computername\share\" -disk:0:0
+#+END_EXAMPLE
+
+** Image comparison
+
+  - Check out the source, open AutoUnattend.xml in Image
+    Configuration Editor (ICE).  Add/Copy the
+    "Windows/AutoUnattend/Windows7/Out-of-Box Drivers/DriversFor/"
+    to "C:\Program Files (x86)\Windows Embedded Standard
+    7\DS64SP1\Out-of-Box Drivers" (In ICE, you can see "Out-of-Box
+    Drivers" option in the left side "Distribution Share" pane and go
+    from there)
+
+  - Create bootable media from the answer file ("Tools" -> "Create
+    Media" -> "Create IBW image from Anser File") and then install it
+    in real hardware.
+
+    There are two ways you can boot and install this:
+
+    - Using USB: Take an empty USB driver, format it using fat32, make
+      partition active, copy files.  
+
+      Something like
+
+#+BEGIN_EXAMPLE
+      diskpart
+      select disk #diskn
+      clean
+      create partition primary
+      select partition 1
+      active
+      format fs=fat32 quick
+      assign letter=W
+      exit
+      xcopy c:\path\to\ICE\output\*.* /s /e /f W:\
+#+END_EXAMPLE	
+
+    - Using network share: Boot using WinPE, do a factory
+      reset, kill the GUI, go into command prompt, mount the network
+      share where ICE output is avaiable, install it
+   
+      Something like:
+
+#+BEGIN_EXAMPLE
+      net use z: "\\mycomputername\sharename" * /u:"agi\myusername"
+      z:
+      cd \path\to\ICE\output
+      setup.exe /unattend:"AutoUnattend.xml"
+#+END_EXAMPLE
+
+  - Once completely installed, leave it for 15 mins in desktop, then
+    shutdown, boot into WinPE and capture the C: as VHD
+
+    Something like:
+
+#+BEGIN_EXAMPLE
+    net use z: "\\computername\share" * /u:"agi\yourusername"
+    z:\path\to\vhdtools\VHDToolsx64\VHDCapture.exe capture -savepath:"\\computername\share\" -disk:0:0
+    (hint1: Use "VHDCapture.exe list" to get list of disks/partitions available for capturing)
+    (hint2: Use "VHDCaptureWizard.exe" if you prefer GUI)
+    (hint3: Make sure the partition we want to capture is mounted)
+#+END_EXAMPLE
+
+  - In dev station, run "BuildWindowsImageNoCustimization" command
+    (make sure you do this in the command prompt opended by running
+    "OpenBuildEnv.cmd") to generate the offline image.  This will
+    produce "Windows.vhd"
+
+  - Take the diff between images offline generated image and captured
+    image.
+
+    Note that all these commands must be run in the same commandprompt
+    where "BuildWindowsImage" was run from (i.e.,in
+    "OpenBuildEnv.cmd").
+
+    - Mount the images.
+   
+      Something like:
+
+#+BEGIN_EXAMPLE
+     md c:\tmp\WindowsOffline c:\tmp\Windows
+     WinUtils -MountImage \path\to\local\offline\image\Windows.VHD -DestPath c:\tmp\WindowsOffline
+     WinUtils -MountImage \path\captured\image\Disk0.vhd -DestPath c:\tmp\Windows
+#+END_EXAMPLE
+
+    - Get the registry differences
+
+#+BEGIN_EXAMPLE
+      WinUtils -RegDumpAll c:\tmp\WindowsOffline -DestPath c:\tmp\pre
+      WinUtils -RegDumpAll c:\tmp\Windows -DestPath c:\tmp\post
+      md c:\tmp\pre c:\tmp\post c:\tmp\diff\Registry c:\tmp\RegistryPermissions
+      for /f "delims=" %k in ('dir /b c:\tmp\pre\*.reg') do regdiff "c:\tmp\pre\%k" "c:\tmp\post\%k" /diff "c:\tmp\diff\Registry\%k"
+      copy c:\tmp\post\*.acl.txt c:\tmp\RegistryPermissions\
+#+END_EXAMPLE
+
+    - Get the directory/file differences
+
+      Launch the GUI diff tool, see the differences and copy the differences to "c:\tmp\diff"
+      NOTE: This will be automated soon.
+
+#+BEGIN_EXAMPLE
+     "c:\Program Files (x86)\Beyond Compare 3\BComp.exe" c:\tmp\Windows c:\tmp\WindowsOffline
+#+END_EXAMPLE
+
+    - Copy the c:\tmp\diff\ to
+      "dev\Windows\BallyPackages\Windows7\BallyPackages_Files\SpecializeOOBE"
+      (and update
+      "dev/Windows/BallyPackages/Windows7/BallyPackages.xml" if
+      required)
+      
+      Copy the c:\tmp\RegistryPermissions\ to "dev\Windows\BallyPackages\Windows7\BallyPackages_Files\RegistryPermissions"
+
+  - Run "BuildWindowsImage" to generate the offline Windows image.
+
+  - Install this image in target hardware using WinPE image. Make sure you do factory reset before installing.  
+
+#+BEGIN_EXAMPLE
+    Hint: Again, to speed up, you can install using network share. In
+    WinPE command prompt, you can do a network share
+    mount where Windows.vhd is available, then mount and extract that
+    image to c:.
+
+    net use z: "\\computername\share" * /u:"agi\yourusername"
+    copy z:\path\to\Windows.vhd g:\
+    WinUtils\WinUtils.cmd -ExtractImage g:\Windows.vhd -DestPath c:\
+#+END_EXAMPLE
+
+  - Boot the target hardware and verify that this works as expected (i.e.,
+    is as "good" as the one we installed manually).
+
+* Footnotes
+
+[fn:1] http://www.geoffchappell.com/notes/windows/boot/bsd.htm
+
+[fn:2] http://thestarman.narod.ru/asm/mbr/W7MBR.htm
+
+[fn:3] https://stump.io/projects/kexec/wiki/WikiStart
+
+[fn:4] http://www.geoffchappell.com/studies/windows/shell/index.htm
+
+[fn:5] http://msdn.microsoft.com/en-us/library/windows/hardware/ff542202%28v=vs.85%29.aspx
+
+[fn:6] http://www.hexblog.com/?p=94
+
+[fn:7] http://en.wikipedia.org/wiki/BIOS_parameter_block
+
+[fn:8] http://homepage.ntlworld.com/jonathan.deboynepollard/FGA/bios-parameter-block.html
+
+[fn:9] http://homepage.ntlworld.com/jonathan.deboynepollard/FGA/windows-nt-6-boot-process.html
+
+[fn:10] http://stoned-vienna.com/downloads/The%20Art%20of%20Bootkit%20Development.pdf
+
+[fn:11] http://www.osronline.com/article.cfm?article=203
+
+[fn:12] http://msdn.microsoft.com/en-us/library/windows/desktop/aa365503%28v=vs.85%29.aspx
+
+[fn:13] http://msdn.microsoft.com/en-us/library/windows/desktop/ms724475%28v=vs.85%29.aspx
+
+[fn:14] http://technet.microsoft.com/en-us/library/dd744341%28v=ws.10%29.aspx
+
+[fn:15] http://blogs.technet.com/b/brad_rutkowski/archive/2007/08/25/how-to-catch-shutdowns-that-don-t-go-to-debugger-or-cause-bugchecks.aspx
+
+[fn:16] http://uninformed.org/?v=4&a=1
+

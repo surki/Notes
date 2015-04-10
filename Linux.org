@@ -1,0 +1,418 @@
+#+STARTUP:    showall
+#+STARTUP:    hidestars overview
+#+TITLE:      Linux Notes
+#+AUTHOR:     Suresh Kumar
+#+EMAIL:      sureshkumar.pp@gmail.com
+#+OPTIONS:    H:3 num:t toc:t \n:nil @:t ::t |:t ^:t -:t f:t *:t TeX:t LaTeX:t skip:nil d:(HIDE) tags:not-in-toc
+#+OPTIONS:    ^:{}
+#+STYLE:      <link rel="stylesheet" type="text/css" href="css/stylesheet.css" />
+
+* Kernel
+** Kernel startup (for X86 and ARM)
+** Scheduler
+** MM
+** Network
+** Video
+** Devices
+*** USB
+*** TTY
+** syscall (x86)
+   - syscall initialization procedure
+     - setup()
+       - startp_32()
+         - start_kernel() (from init/main.c)
+             - trap_init()
+               - set_system_trap_gate(SYSCALL_VECTOR, &system_call);
+                 - arch/x86/include/asm/irq_vectors.h # define SYSCALL_VECTOR			0x80
+     - Or do a syscall using sysenter, syscall etc (vdso, AT_SYSINFO,
+       __kernel_vsyscall ...)
+       - linux-2.6/arch/x86/vdso/vdso32-setup.c
+       - linux-2.6/arch/x86/vdso/vdso32/{syscall,sysenter,int80}.S
+       - linux-2.6/arch/x86/vdso/vdso32/vdso32.lds.S
+
+   - syscall flow for execve
+     - sys_execve() (from arch/x86/kernel/process.c)
+       - do_execve(filename, argv, envp, regs)
+         - Sanity checks
+         - open_exec(filename)
+         - prepare_binprm(bprm)
+           Reads permission and stuff
+         - copy_strings()
+           Copy environment, args etc
+         - search_binary_handler(bprm,regs)
+           Search for the executable type and its handler
+           - load_elf_binary()
+             - Do some sanity checks
+             - Read in all the elf sections
+             - Map the read elf sections
+             - load_elf_interp()
+               - Loads the interpreter mentioned in the elf (for
+                 example /lib/ld-linux.so)
+             - start_thread()
+               - Sets up the USER_CS. Sets IP and SP to be that of the
+                 interpreter's entry points (in our case it is
+                 _dl_start() of ld-linux.so)
+       - RTLD_START (glibc/sysdeps/i386/dl-machine.h)
+         - _dl_start() (glibc/elf/rtld.c)
+           - elf_machine_load_address ()
+             - Runtime load address of the linker
+           - Read the linker's own header
+           - Allocate TLS
+           - ELF_DYNAMIC_RELOCATE ()
+             - elf_machine_runtime_setup () (glibc/sysdeps/i386/dl-machine.h)
+               - If we are doing "lazy" on-demand binding, setup the
+                 appropriate handlers (_dl_runtime_resolve or
+                 _dl_runtime_profile)
+             - ELF_DYNAMIC_DO_REL () (glibc/elf/dynamic-link.h)
+               - elf_dynamic_do_rel()
+                 - If laze relocation, call elf_machine_lazy_rel() (at
+                   glibc/sysdeps/i386/dl-machine.h). Set up to call
+                   _dl_runtime_resolve.
+             - ELF_DYNAMIC_DO_RELA () (glibc/elf/dynamic-link.h)
+           - _dl_start_final()
+             - Record the startup time
+             - __builtin_frame_address (0)
+             - _dl_sysdep_start() (glibc/elf/dl-sysdep.c)
+               - Initialize user entry point i.e., ENTRY_POINT (which
+                 is nothing but _start). It will be updated to a value
+                 specified by AT_ENTRY if one was supplied by the elf
+                 binary
+               - dl_main() (from glibc/elf/rtld.c)
+                 - process_envvars()
+                 - See if the ld.so was run directly (rather than
+                   being invoked on behalf of an elf's PT_INTERP
+                   section). If so, support the "ld.so programname
+                   args" kind of invocation. Loaded program's
+                   PT_INTERP would be ignored, as we are the
+                   interpreter.
+                 - Or else: call _dl_new_object() Create a link map for
+                   executable
+                 - Scan through the header looking for dynamic section
+                   and initialize appropriate values in the create map
+                   object.
+                 - elf_get_dynamic_info ()
+                 - _dl_setup_hash ()
+                 - If we were just called to verify ("--verify"), exit
+                   now
+                 - _dl_init_paths
+                 - Load debug sections, setup debugging (for self as
+                   well)
+                 - Load all the objects, including LD_PRELOADS and
+                   DT_NEEDED objects
+                 - _dl_receive_error () for reporting missing
+                   dependencies
+                 - If we were just called to list the libraries
+                   ("--list"), list them and call it quits
+                 - If we are prelinked, update the conflicts and do
+                   call _dl_resolve_conflicts() 
+                 - Else 
+                   - For each library object in the list
+                     - Call _dl_relocate_object() which will do the
+                       relocation as needed (lazy etc -
+                       _dl_runtime_resolve() is the one that is of
+                       interest here). And also mprotect'ing of
+                       segments are done here.
+               - return user_entry
+             - Return what ever value _dl_sysdep_start() returned (that
+               is the starting address of the binary)
+           - Return the user start address
+         - Setup the stack
+         - Call _dl_init_internal_*()
+         - Jump to the user start address
+           - Setup stack
+           - __libc_start_main() (glibc/csu/libc-start.c)
+             - INIT_ARGV_and_ENVIRON
+             - _dl_aux_init ()
+             - __libc_csu_irel ()
+             - __pthread_initialize_minimal ()
+             - _dl_setup_stack_chk_guard ()
+             - __cxa_atexit (...rtld_fini, ....)
+               - Register destructor call back of the dynamic linker if
+                 any
+             - __libc_init_first (argc, argv, __environ)
+             - __cxa_atexit (... fini, ...)
+               - Register destructor call back of the program if any
+             - __libc_check_standard_fds ()
+             - init (argc, argv, __environ MAIN_AUXVEC_PARAM)
+             - result = main (argc, argv, __environ MAIN_AUXVEC_PARAM)
+               - Life revolves around here
+             - exit (result)
+               - __run_exit_handlers (status, &__exit_funcs, true)
+                 - Call the functions that were registered with
+                   "atexit()" and "onexit()". Cleanup stdio.
+                 - RUN_HOOK (__libc_atexit, ())
+                 - _exit()
+                   - syscall for __NR_exit_group
+** TODO To Read
+   - KLM (Sanjay)
+   - http://www.ibm.com/developerworks/aix/library/au-spunix_ksplice/index.html
+   - Virtualization
+     - http://en.wikipedia.org/wiki/Popek_and_Goldberg_virtualization_requirements
+   - Misc
+     - http://www.win.tue.nl/~aeb/linux/lk/lk.html
+     - http://lkml.org/lkml/2002/12/9/13
+     - http://x86.ddj.com/ftp/manuals/tools/elf.pdf
+     - Loaders and Linkers Book
+     - http://www.phrack.com/issues.html?issue=59&id=8&mode=txt
+     - phrack smashing the stack for fun
+     - http://articles.manugarg.com/systemcallinlinux2_6.html
+     - http://www.trilithium.com/johan/2005/08/linux-gate/
+     - http://www.codeguru.com/cpp/w-p/system/devicedriverdevelopment/article.php/c8223
+* XServer
+** TODO To Read
+   - http://keithp.com/~keithp/talks/xarch_ols2004/xarch-ols2004-html/
+   - http://sites.google.com/site/jonsmirl/
+   - http://www.x.org/wiki/Development?action=show&redirect=DevelopersFAQ
+   - http://www.opengl.org/registry/specs/EXT/framebuffer_object.txt
+   - http://home.comcast.net/~fbui/
+   - http://kerneltrap.org/node/4109
+   - http://www.opengl.org/documentation/red_book/
+** Xorg general architecture
+** Xorg and OpenGL
+*** TinyGL
+** Intumo                                                          
+*** to-be-checked
+**** canvas http://live.gnome.org/ProjectRidley/CanvasOverview
+**** Native widget drawing in canvas - QGraphicsView
+**** Physics engine:
+***** @Simon: “poorer” in which sense? have you tried writing a demo like TAT’s? have you tried using shaders? a physics engine? Clutter is already a competitive mobile UI tool.
+***** @krh, yep - also see box2d and chipmonk. Pippin has been playing with them all (http://www.murrayc.com/blog/permalink/2008/03/03/clutter-tutorial-done-for-now/)
+*** clutter
+**** Q: Offscreen rendering support?
+*** xserver
+  - http://tldp.org/HOWTO/XWindow-Overview-HOWTO/introduction.html
+  - History
+  - MIT -> Athena(1984) -> XConsortium(1988) -> XFree86 -> (fork, 2004) -> X.Org server
+  - Architecture
+  - Client - Server model. Applications are clients.
+  - Q: check how x forwarding works
+  - Server has exclusive control over the screen
+  - Clients informs Server what they want to display
+  - Clients do not have to know about hardware, they only have to know how to (==protocol) speak with the server
+  - Transparent across network
+  - Input method is also handled by server and passed on to clients
+  - Xlib helps clients communicate with the server
+  - Window management: X just provides mechanism, not policy
+  - Window manager is not part of X. Its just another client, albeit running in a higher privilege
+  - Q: How window managers work? - Do they create one root window and make all other windows children of this?
+  - Client applications 
+  - they will have to use Xlib for creating GUI
+  - Xlib is rudimentary. Very hard to get graphical items like button, menu etc. Also called widgets.
+  - There are libraries which provide this functionality: widget library
+  - Canvas is a special widget, as in, it is a sub area with in a client where we can draw stuff directly.
+  - Variety of widget toolkits Athenas, motif, lesstif, gtk, Qt
+  - Q: how different is this from using a libarary that knows how to do drawing and stuff
+  - Problems
+  - Each window manager has own policy and decoration of how to manage the windows
+  - Applications are not restricted to single toolkit, so they can use any toolkit they prefer
+  - Each application could be using a different widget toolkit
+  - Q: how different toolkits manage to coexist in using xlib and talking to xserver?
+  - How about utilities like - file manager, control panel etc
+  - Running multiple applications, created with different toolkits make the GUI look and behave inconsistent
+  - Resource usage
+  - Desktop environment
+  - Unify the things and fix the above problems
+  - KDE, GNOME, CDE etc
+  - http://en.wikipedia.org/wiki/Raster_graphics
+  - http://en.wikipedia.org/wiki/Bit_blit
+  - http://en.wikipedia.org/wiki/X_protocol
+  - http://en.wikipedia.org/wiki/X_Window_System_protocols_and_architecture
+  - http://en.wikipedia.org/wiki/X_Window_System_core_protocol
+  - http://en.wikipedia.org/wiki/Video_Graphics_Array
+  - http://en.wikipedia.org/wiki/Graphics_card
+  - Graphics things to be read:
+  - http://en.wikipedia.org/wiki/Scene_graph
+  - http://en.wikipedia.org/wiki/Box_modeling
+  - what is x nesting?
+  - xnest and xephyr?
+  - check video ram articles from DOS days
+  - vector graphics displays?
+  - colorspaces
+  - YUV (is flash YUV?)
+  - RGB
+  - http://en.wikipedia.org/wiki/Open_Look
+  - Frame buffers
+  - http://en.wikipedia.org/wiki/Framebuffer
+  - http://en.wikipedia.org/wiki/Linux_framebuffer
+  - http://en.wikipedia.org/wiki/Xvfb
+  - directfb, SDL
+  - http://en.wikipedia.org/wiki/Double_buffering
+  - http://en.wikipedia.org/wiki/Graphics_card
+  - What are overlays?
+  - What is anti-aliasing?
+  - http://en.wikipedia.org/wiki/Anti-aliasing
+  - what is bitmapped graphics?
+  - does it have to do anything with raster/vector stuff?
+  - tile based rendering
+  - http://en.wikipedia.org/wiki/Tiled_rendering
+  - used by many mobile displays?
+  - what is vesa?
+  - what is the relation between framebuffer, vram, vga and vesa?
+  - enlightenment?
+  - why did openmoko choose this?
+  - http://en.wikipedia.org/wiki/Enlightenment_Foundation_Libraries
+  - what is xrender?
+  - hardware accelerated framebuffer
+  - TODO ~/Documents/01-raster.pdf
+  - TODO http://en.wikipedia.org/wiki/Rendering_(computer_graphics)
+*** QUESTIONS:
+**** Why not use Qt and custom widgets on top of it?
+**** Why not use GTK and custom widgets on top of it?
+**** Framebuffer and X11 comparison: http://www.vanille-media.de/site/index.php/2007/12/08/framebuffer-vs-x11/
+***** Some tests http://svn.o-hand.com/repos/misc/trunk/fstests/
+**** what is libggi?
+***** comment from somewhere: Lucas wrote: A good compromise I found for a touchscreen based POS system (using one of those VIA mini-ATX boards) was libggi. It allows to develop and test on X and have the same binary run under fb.
+**** what is this http://xynth.org/ ?
+**** check qtopia
+**** check http://www.freesmartphone.org/index.php/Specifications
+**** check http://www.angstrom-distribution.org/
+**** check http://www.vanille-media.de/site/index.php/2007/12/05/usability-through-bling/
+**** check clutter
+**** check cocoa
+**** read X11 log in computer/laptop
+**** read http://en.wikipedia.org/wiki/Display_resolution
+**** nano x http://www.microwindows.org/
+**** http://www.minigui.org/
+**** http://fltk.org - Fast Light ToolKit
+* Miscellaneous
+** Tinyelf
+#+BEGIN_SRC sh
+[suresh@linux-vrse tt]$ cat | gcc -nostdlib -x c - -o helloworld
+#define SYS_exit  1
+#define SYS_write 4
+#define stdout    1
+
+int strlen(const char *str)
+{
+  long len = 0;
+  while (str && *str++)
+  {
+      len++;
+  }
+  
+  return len;
+}
+
+
+void print(const char *str) 
+{
+    int len = strlen(str);
+
+    long ret;
+
+    /* Can't touch ebx directly, PIC uses it */
+    __asm__ __volatile__ ("pushl %%ebx\n"
+                          "movl  %%esi, %%ebx\n"
+                          "int	 $0x80\n;"
+                          "popl  %%ebx"
+                          :
+                          : "a" (SYS_write),
+                            "S" ((long) stdout),
+                            "c" ((long) str),
+                            "d" ((long) len));
+    return;
+}
+
+void _start()
+{
+  main();
+
+  __asm__ __volatile__ (
+       "xorl %%ebx, %%ebx\n"
+       "int $0x80\n"
+       :
+       : "a" (SYS_exit));
+}
+
+int main()
+{
+  print("Hello World\n");
+  return 0;
+}
+
+[suresh@linux-vrse tt]$ strip -R .comment -R .comment.SUSE.OPTs -R .note.gnu.build-id helloworld
+[suresh@linux-vrse tt]$ ll helloworld 
+-rwxr-xr-x 1 suresh users 540 2010-07-21 13:19 helloworld
+
+[suresh@linux-vrse tt]$ ./helloworld 
+Hello World
+
+#+END_SRC
+** VDSO
+   Dump of VDSO related stuff
+#+BEGIN_SRC sh
+        [suresh@linux-vrse tmp]$ ldd /bin/cat 
+                linux-gate.so.1 =>  (0xffffe000)
+                libc.so.6 => /lib/libc.so.6 (0xb7e65000)
+                /lib/ld-linux.so.2 (0xb7fe0000)
+        
+        [suresh@linux-vrse tmp]$ LD_SHOW_AUXV=1 /bin/cat | grep AT_SYSINFO
+        AT_SYSINFO:      0xffffe414
+        AT_SYSINFO_EHDR: 0xffffe000
+        
+        [suresh@linux-vrse tmp]$ cat /proc/self/maps  | grep vdso
+        ffffe000-fffff000 r-xp 00000000 00:00 0          [vdso]
+        
+        
+        [suresh@linux-vrse tmp]$ dd if=/proc/self/mem of=vdso skip=$((0xffffe000/0x1000)) count=1 bs=$((0x1000))
+        1+0 records in
+        1+0 records out
+        4096 bytes (4.1 kB) copied, 4.3047e-05 s, 95.2 MB/s
+        
+        [suresh@linux-vrse tmp]$ objdump -d --start-address=0xffffe000 ./vdso 
+        
+        /tmp/vdso:     file format elf32-i386
+        
+        
+        Disassembly of section .text:
+        
+        ffffe400 <__kernel_sigreturn>:
+        ffffe400:       58                      pop    %eax
+        ffffe401:       b8 77 00 00 00          mov    $0x77,%eax
+        ffffe406:       cd 80                   int    $0x80
+        ffffe408:       90                      nop    
+        ffffe409:       8d 76 00                lea    0x0(%esi),%esi
+        
+        ffffe40c <__kernel_rt_sigreturn>:
+        ffffe40c:       b8 ad 00 00 00          mov    $0xad,%eax
+        ffffe411:       cd 80                   int    $0x80
+        ffffe413:       90                      nop    
+        
+        ffffe414 <__kernel_vsyscall>:
+        ffffe414:       51                      push   %ecx
+        ffffe415:       52                      push   %edx
+        ffffe416:       55                      push   %ebp
+        ffffe417:       89 e5                   mov    %esp,%ebp
+        ffffe419:       0f 34                   sysenter 
+        ffffe41b:       90                      nop    
+        ffffe41c:       90                      nop    
+        ffffe41d:       90                      nop    
+        ffffe41e:       90                      nop    
+        ffffe41f:       90                      nop    
+        ffffe420:       90                      nop    
+        ffffe421:       90                      nop    
+        ffffe422:       eb f3                   jmp    ffffe417
+        <__kernel_vsyscall+0x3>
+        ffffe424:       5d                      pop    %ebp
+        ffffe425:       5a                      pop    %edx
+        ffffe426:       59                      pop    %ecx
+        ffffe427:       c3                      ret    
+        
+        [suresh@linux-vrse tmp]$ # or we can use
+        [suresh@linux-vrse tmp]$ dd if=/proc/self/mem of=- skip=$((0x`cat /proc/self/maps | grep vdso | cut -d'-' -f1`/0x1000)) count=1 bs=$((0x1000)) | objdump -d --start-address=0xffffe000 - 
+#+END_SRC
+
+** ELF format
+   - http://www.eresi-project.org/wiki/TheELFsh
+   - http://en.wikipedia.org/wiki/Executable_and_Linkable_Format
+   - http://www.linuxjournal.com/article/1060
+   - http://www.linuxjournal.com/article/1059
+   - http://gala4th.blogspot.com/2009/12/understanding-elf-using-readelf-and.html
+   - http://www.freebsd.org/cgi/man.cgi?query=elf
+   - http://s.eresi-project.org/inc/articles/elf-rtld.txt
+   - http://web.archive.org/web/20060626075627/http://www.phrack.org/phrack/59/p59-0x08.txt
+   - http://refspecs.freestandards.org/elf/elf.pdf
+** Stack
+** BIOS
+*** Coreboot
+    - Cache as RAM: www.coreboot.org/images/6/6c/LBCar.pdf
