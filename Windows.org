@@ -67,8 +67,7 @@ sed -i "s|D:\\tmp\\pnp\\scratch\\winpe_pass_after||g" test.txt
 
 ** Debugging
 
-    - Install "Debugger Tools" and "Windows Performace Toolkit" from
-      \\ws-in742\images\Windows Kits\8.0\StandaloneSDK 
+    - Install "Debugger Tools" and "Windows Performace Toolkit" 
 
     - Set symbol path environment variable
 
@@ -76,8 +75,7 @@ sed -i "s|D:\\tmp\\pnp\\scratch\\winpe_pass_after||g" test.txt
 :    _NT_SYMBOL_PATH=SRV*C:\symbols*http://msdl.microsoft.com/download/symbols
 #+END_EXAMPLE
 
-    - Optionally copy symbols from local symbol cache
-      copy symbols from \\ws-in742\{symbols,symcache} into c:\
+    - Optionally copy symbols from local symbol cache if you have
 
     - Use windbg for debugging and xperf for profiling
 
@@ -973,19 +971,19 @@ Sysinternals - www.sysinternals.com
     
    The mapping of registry hives to files:
 
-   | Registry Hive                  | Actual file                                              |
-   |--------------------------------+----------------------------------------------------------|
-   | HKEY_CURRENT_CONFIG            | Windows\System32\config\SYSTEM                           |
-   | HKEY_CURRENT_USER              | Mapped from HKEY_USERS                                   |
-   | HKEY_LOCAL_MACHINE\SAM         | Windows\System32\config\SAM                              |
-   | HKEY_LOCAL_MACHINE\Security    | Windows\System32\config\SECURITY                         |
-   | HKEY_LOCAL_MACHINE\Software    | Windows\System32\config\SOFTWARE                         |
-   | HKEY_LOCAL_MACHINE\System      | Windows\System32\config\SYSTEM                           |
-   | HKEY_LOCAL_MACHINE\BCD00000000 | Boot\BCD                                                 |
-   | HKEY_USERS\.DEFAULT            | Windows\System32\config\DEFAULT                          |
-   | HKEY_USERS\*                   | Windows\ServiceProfiles\NetworkService\NTUSER.DAT        |
-   |                                | Windows\ServiceProfiles\LocalService\NTUSER.DAT          |
-   |                                | Users\Suresh\NTUSER.DAT                             |
+   | Registry Hive                  | Actual file                                               |
+   |--------------------------------+-----------------------------------------------------------|
+   | HKEY_CURRENT_CONFIG            | Windows\System32\config\SYSTEM                            |
+   | HKEY_CURRENT_USER              | Mapped from HKEY_USERS                                    |
+   | HKEY_LOCAL_MACHINE\SAM         | Windows\System32\config\SAM                               |
+   | HKEY_LOCAL_MACHINE\Security    | Windows\System32\config\SECURITY                          |
+   | HKEY_LOCAL_MACHINE\Software    | Windows\System32\config\SOFTWARE                          |
+   | HKEY_LOCAL_MACHINE\System      | Windows\System32\config\SYSTEM                            |
+   | HKEY_LOCAL_MACHINE\BCD00000000 | Boot\BCD                                                  |
+   | HKEY_USERS\.DEFAULT            | Windows\System32\config\DEFAULT                           |
+   | HKEY_USERS\*                   | Windows\ServiceProfiles\NetworkService\NTUSER.DAT         |
+   |                                | Windows\ServiceProfiles\LocalService\NTUSER.DAT           |
+   |                                | Users\Suresh\NTUSER.DAT                                   |
    |                                | Users\Suresh\AppData\Local\Microsoft\Windows\UsrClass.dat |
 
    Note that HKEY_USERS\.DEFAULT is not default user profile, it is
