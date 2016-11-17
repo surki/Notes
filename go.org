@@ -1,3 +1,4 @@
+#+OPTIONS: ^:{}
 
 * Program
 #+BEGIN_SRC go
@@ -21,71 +22,70 @@ gdb -ex "break *${TEST_ENTRY}"  ./test
 #+END_SRC
 
 
-  - runtime/rt0_linux_amd64.s:_rt0_amd64_linux
+  - [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/rt0_linux_amd64.s#L7][runtime/rt0_linux_amd64.s:_rt0_amd64_linux]]
     - On entry, stack contains argc, argv (and aux info) and is guaranteed
       to be aligned on 16 bytes, refer [[http://refspecs.linuxfoundation.org/elf/x86-64-abi-0.99.pdf][ x86_64 Linux ABI]]
     - Get the argc, argv from stack and put them into rsi and rdi respectively
-    - Jump to rt0_linux_amd64.s:main
-      - Jump to runtime/asm_amd64.s:runtime.rt0_go
+    - Jump to [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/rt0_linux_amd64.s#L72][runtime/rt0_linux_amd64.s:main]]
+      - Jump to [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/asm_amd64.s#L10][runtime/asm_amd64.s:runtime.rt0_go]]
         - Make space for args in the stack, align by 16 bytes
         - Copy the argc, argv into the stack
         - Setup stackguard (?)
         - Find processor information (SSE, AVX etc)
         - Call _cgo_init if available
-        - Setup TLS sys_linux_amd64.s:runtime.settls
-          - Uses m0.tls from src/runtime/proc.go (which is of type m defined
-            in src/runtime/runtime2.go) (the struct itself is in .bss
-            section)
+        - Setup TLS [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/sys_linux_amd64.s#L458][sys_linux_amd64.s:runtime.settls]]
+          - Uses [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L79][m0.tls]] (which is of type [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/runtime2.go#L377-L442][struct m]]) (the struct itself is
+            defined in .bss section)
         - Verify TLS works
-        - Call src/runtime/runtime1.go:check()
-        - Call src/runtime/runtime1.go:args()
-          - Call src/runtime/os_linux.go:sysargs()
+        - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/runtime1.go#L142][src/runtime/runtime1.go:check()]]
+        - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/runtime1.go#L61][src/runtime/runtime1.go:args()]]
+          - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/os_linux.go#L188][src/runtime/os_linux.go:sysargs()]]
             - Process values out of AUXV passed by kernel: _AT_NULL,
               _AT_PAGESZ and_AT_RANDOM
-            - Call src/runtime/vdso_linux_amd64.go:archauxv()
+            - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/vdso_linux_amd64.go#L292][src/runtime/vdso_linux_amd64.go:archauxv()]]
               - Process _AT_SYSINFO_EHDR and get VDSO info out of it
-              - Call src/runtime/vdso_linux_amd64.go:vdso_init_from_sysinfo_ehdr()
+              - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/vdso_linux_amd64.go#L170][src/runtime/vdso_linux_amd64.go:vdso_init_from_sysinfo_ehdr()]]
                 - Get load offset and dyanamic table offsets (_PT_LOAD and
                   _PT_DYNAMIC)
                 - Out of dynamic table, get the follow tags/entries:
                   _DT_STRTAB, _DT_SYMTAB, _DT_HASH, _DT_VERSYM and
                   _DT_VERDEF
-              - Call src/runtime/vdso_linux_amd64.go:vdso_parse_symbols()
+              - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/vdso_linux_amd64.go#L264][src/runtime/vdso_linux_amd64.go:vdso_parse_symbols()]]
                 - Get symbol info for: __vdso_time, __vdso_gettimeofday,
                   __vdso_gettimeofday_sym and __vdso_clock_gettime
-          - Call src/runtime/os_linux.go:osinit()
-            - Call src/runtime/os_linux.go:getproccount()
+          - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/os_linux.go#L227][runtime.osinit()]]
+            - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/os_linux.go#L83][runtime.getproccount()]]
               - Compute number of processors available by calling
                 sched_getaffinity()
-          - Call src/runtime/proc.go:schedinit()
-            - Call src/runtime/traceback.go:tracebackinit()
-            - Call src/runtime/traceback.go:moduledataverify()
+          - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L427][runtime.schedinit()]]
+            - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/traceback.go#L][runtime.tracebackinit()]]
+            - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/traceback.go#L][runtime.moduledataverify()]]
               - Verify all modules
               - Modules are found via firstmoduledata linker symbol
-	    - Call src/runtime/traceback.go:stackinit()
-	    - Call src/runtime/traceback.go:mallocinit()
-	    - Call src/runtime/traceback.go:mcommoninit()
-	    - Call src/runtime/traceback.go:alginit()
-	    - Call src/runtime/traceback.go:typelinksinit()
-	    - Call src/runtime/traceback.go:itabsinit()
-            - Call src/runtime/traceback.go:msigsave()
-            - Call src/runtime/traceback.go:goargs()
-            - Call src/runtime/traceback.go:goenvs()
-            - Call src/runtime/traceback.go:parsedebugvars()
-            - Call src/runtime/traceback.go:gcinit()
+	    - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/stack.go#L157][runtime.stackinit()]]
+	    - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/malloc.go#L213][runtime.mallocinit()]]
+	    - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L490][runtime.mcommoninit()]]
+	    - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/agl.go#L292][runtime.alginit()]]
+	    - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/type.go#L445][runtime.typelinksinit()]]
+	    - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/iface#L144][runtime.itabsinit()]]
+            - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/os_linux.go#L266][runtime.msigsave()]]
+            - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/runtime1.go#L67][runtime.goargs()]]
+            - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/os_linux.go#L245][runtime.goenvs()]]
+            - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/runtime1.go#L354][runtime.parsedebugvars()]]
+            - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/mgc.go#L164][runtime.gcinit()]]
               - Call setGCPercent to set the GC trigger percentage (based on
                 GOGC environment variable)
             - Compute number of Ps (honoring GOMAXPROCS env variable and
               _MaxGomaxprocs)
-            - Call src/runtime/proc.go:procresize()
+            - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L3283][src/runtime/proc.go:procresize()]]
               - Create Ps
               - Use runtime.allp[0] for the current execution context (i.e.,
                 acquire P for current M)
               - Set all Ps to Idle state
-          - Call src/runtime/proc.go:newproc(): Create new goroutine to
-            start the program. src/runtime/proc.go:main() is the goroutine
+          - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L2708][src/runtime/proc.go:newproc()]]: Create new goroutine to
+            start the program. [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L106][src/runtime/proc.go:main()]] is the goroutine
             entry point.
-            - Call src/runtime/proc.go:newproc1()
+            - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L2720][src/runtime/proc.go:newproc1()]]
               - Allocate new stack
               - Copy args into the new stack
               - Set the new g's stack's top point to
@@ -93,22 +93,22 @@ gdb -ex "break *${TEST_ENTRY}"  ./test
                 - This sets up things as if goexit called this goroutine, so
                   control will return to this on exit from the goroutine
               - Set the new g to runnable state
-              - Call src/runtime/proc.go:runqput() to put the newg in
+              - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L4036][src/runtime/proc.go:runqput()]] to put the newg in
                 runqueue
-          - Call src/runtime/proc.go:mstart()
-            - Call src/runtime/proc.go:mstart1()
+          - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L1079][src/runtime/proc.go:mstart()]]
+            - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L1099][src/runtime/proc.go:mstart1()]]
               - Call src/runtime/os_linux.go:minit()
                 - Setup signal stack
                 - Set signal mask
               - Set signal handlers (pointing to src/runtime/sys_linux_amd64.s:sigtramp())
                 - sigtramp() calls src/runtime/signal_sigtramp.go:sigtrampgo()
-            - Call src/runtime/proc.go:schedule()
+            - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L2070][src/runtime/proc.go:schedule()]]
               - Find a g to run
-              - Call src/runtime/proc.go:execute()
+              - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L1805][src/runtime/proc.go:execute()]]
                 - Call src/runtime/asm_amd64.s:gogo()
-                - Call src/runtime/proc.go:main(). By retrieving the entry
+                - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L106][src/runtime/proc.go:main()]]. By retrieving the entry
                   point from gobuf and jumping to it.
-                  - Start sysmon src/runtime/proc.go:sysmon() in new 'M'
+                  - Start sysmon [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L3580][src/runtime/proc.go:sysmon()]] in new 'M'
                     (i.e., in new thread)
                     - Forever
                       - usleep(between 10us and 10ms)
@@ -124,12 +124,12 @@ gdb -ex "break *${TEST_ENTRY}"  ./test
                       - Call netpoll() if we haven't polled in last 10ms
                         - if there are any events, inject the corresponding
                           goroutines into global runqueue
-                      - Call src/runtime/proc.go:retake() to retake P's
+                      - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L3687][src/runtime/proc.go:retake()]] to retake P's
                         blocked in syscalls
                         - For each P in the system (i.e., for each gomaxprocs)
                           - if P.status == _Psyscall
                             - if blocked for more than 20us
-                              - Call src/runtime/proc.go:handoffp()
+                              - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L1663][src/runtime/proc.go:handoffp()]]
                                 - This will handoff this P to m (by calling
                                   startm(), which may create new M's if
                                   required (== new OS thread))
@@ -140,7 +140,7 @@ gdb -ex "break *${TEST_ENTRY}"  ./test
                       - Scavenge heap periodically (every 52/2 mins)
                         - This will give back unused heap memory back to OS
                           (by doing madvise(.., _MADV_FREE))
-                  - Call src/runtime/proc.go:init()
+                  - Call [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L212][src/runtime/proc.go:init()]]
                     - Which starts forcegchelper() goroutine
                   - Call src/runtime/mgc.go:gcenable()
                     - Start bgsweep() goroutine
