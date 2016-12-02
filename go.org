@@ -149,3 +149,84 @@ gdb -ex "break *${TEST_ENTRY}"  ./test
                   - Call main_main()
                     - This is the user's main function
                   - Call exit(0)
+* FAQs
+** How goroutines are "interrupted/stopped"?
+
+   Since Go is using cooperative preemption, the goroutines have preemption
+   points that will do the self stop/preemption. This may trip us under
+   not-so-common circumstances if our code doesn't have those preemption
+   points. For example, the following program will not stop (tested in
+   go1.7.3):
+
+#+BEGIN_SRC go
+package main
+
+import (
+	"fmt"
+	"runtime"
+	"time"
+)
+
+func testfunc1() {
+	num := 0
+	for i := 1; i < 10000; i++ {
+		num = num + i
+	}
+}
+
+func busyFunc() {
+	for {
+		testfunc1()
+	}
+}
+
+func main() {
+	runtime.GOMAXPROCS(1)
+
+	go busyFunc()
+
+	time.Sleep(1 * time.Second)
+
+	fmt.Println(" Hello world")
+}
+#+END_SRC
+
+   As we saw in the above startup sequence, even though the sysmon [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L3725-L3737][ can
+   detect]] that goroutine has been busy for long, it will only indicate the
+   intent to preempt [[https://github.com/golang/go/blob/release-branch.go1.7/src/runtime/proc.go#L3781-L3787][by setting a flag in the respective goroutine]], which
+   the respective goroutine checks at (compile time inserted) premption
+   points (like function prologue).
+
+   The compiler doesn't generate function prologue [[https://github.com/golang/go/blob/release-branch.go1.7/src/cmd/internal/obj/x86/obj6.go#L634-L646][if it is a leaf function
+   or if the stack is small]].
+
+   To "verify" that, for example, if you use the below modified testfunc1()
+   function, the premeption check will be generated (since it is no longer a
+   small stack)
+
+#+BEGIN_SRC go
+func testfunc1() {
+	var a [128]byte
+	a[0] = 0
+
+	num := 0
+	for i := 1; i < 10000; i++ {
+		num = num + i
+	}
+}
+#+END_SRC
+
+   Or add a division, which will insert a runtime.panicdivide call (to
+   detect divide by zero), which will make this non-leaf function.
+
+#+BEGIN_SRC go
+func testfunc1() {
+	num := 0
+	for i := 1; i < 10000; i++ {
+		num = num + i/i
+	}
+}
+#+END_SRC
+
+   Though note that as of go1.8, runtime.panicdivide [[https://github.com/golang/go/commit/b92d39ef6924fd5174449f95505d782f3f75db16][will not generate a
+   function prologue]]
