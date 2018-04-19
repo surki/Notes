@@ -1,0 +1,255 @@
+#+OPTIONS: ^:{}
+
+* Truffle
+  - "AST interpreter"
+  - Framework for writing new languages etc
+  - Example languages implemented so far
+    - Ruby, JavaScript, Python, Lua, R and few more experimental languages
+    - LLVM bit code interpreter (Compile C/C++ into LLVM bit code, then
+      interpret that one!)
+    - Interpreting C (Interpret C code directly, without using LLVM etc)
+* Graal compiler
+  - Alternate compiler (to standard JVM's "server", "client" compilers)
+  - Written in Java
+  - Uses JVMCI interface (so that the compiler doesn't have to be in C++ but
+    can still be part of JVM)
+  - Can do JIT or AOT compilation
+  - Has advanced compilation methods: Improved speculative optimization and
+    deoptimizations, partial escape analysis etc
+* GraalVM
+  - A JVM that has Graal compiler support
+  - Only compiler part of JVM is replaced, rest of the JVM is used almost as
+    is (GC, Interpreter etc)
+* SubstrateVM
+  - A new JVM written from ground up (in JVM!)
+  - It can compile to native code using Graal/Truffle's AOT feature: so
+    warmup time and memory usage issues are addressed to an extent.
+  - Limitations:
+    https://github.com/oracle/graal/blob/master/substratevm/LIMITATIONS.md
+* So what can we use out of it immediately?
+  - We can use Graal compiler (either use GraalVM package, or use in Java9,
+    "-XX:+UnlockExperimentalVMOptions -XX:+EnableJVMCI
+    -XX:+UseJVMCICompiler"), as an alternative to "-server" or
+    "-client". This should be a drop in replacement and should bring
+    whatever benefits Graal compiler itself offers.
+
+    Note that we will still have warmup issues (probably bit more since
+    Graal compiler is written in Java, so the compiler itself will take time
+    to warmup!), but should improve "peak performance", probably this is
+    what we are interested in server machines.
+  - For smaller/standalone java programs, we might want to try out
+    SubstrateVM (due to improved startup time)
+  - For our own DSL, we can use Truffle (so we can magically get JIT, AOT
+    etc)
+* So how do they compare against each other on startup times?
+  Time for (almost useless) microbenchmark
+
+  All time in ms
+
+  |    C |   Go | Java8 | Java9 | GraalVM (java8 based) | Java9 + Graal via JVMCI | SubstrateVM + AOT | C + LLVM bitcode interpreter |
+  |------+------+-------+-------+-----------------------+-------------------------+-------------------+------------------------------|
+  | 0.34 | 0.86 |  73.8 | 174.2 |                  97.3 |                   157.6 |               2.1 |                        106.2 |
+
+  Actual runs:
+
+  #+BEGIN_EXAMPLE
+  $ cat hello.c
+  #include <stdio.h>
+   
+  int main() {
+      printf("Hello from C\n");
+      return 0;
+  }
+
+  $ cat HelloWorld.java
+  public class HelloWorld {
+    public static void main(String[] args) {
+      System.out.println("Hello from Java");
+    }
+  }
+
+  $ cat hello.go
+  package main
+  import "fmt"
+  func main() {
+      fmt.Println("Hello from Go")
+  }
+
+  #########################################################
+  # C Hello world
+
+  $ gcc --version
+  gcc (GCC) 7.3.1 20180312
+  Copyright (C) 2017 Free Software Foundation, Inc.
+  This is free software; see the source for copying conditions.  There is NO
+  warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+     
+  $ gcc -o hello hello.c # adding -static option would improve perf
+  $ perf stat -e cpu-clock -r100 ./hello >/dev/null
+   
+   Performance counter stats for './hello' (100 runs):
+   
+            0.347559      cpu-clock:u (msec)        #    0.597 CPUs utilized            ( +-  1.08% )
+   
+         0.000581927 seconds time elapsed                                          ( +-  1.06% )
+
+  #########################################################
+  # Go hello world
+
+  $ go version                                                                     
+  go version go1.10.1 linux/amd64
+
+  $ go build hello.go
+
+  $ perf stat -e cpu-clock -r100 ./hello >/dev/null
+   
+   Performance counter stats for './hello' (100 runs):
+   
+            0.862860      cpu-clock:u (msec)        #    0.884 CPUs utilized            ( +-  1.14% )
+   
+         0.000976005 seconds time elapsed                                          ( +-  1.55% )
+
+  #########################################################
+  # Java hello world(s)
+
+  #########################################################
+  # Java8
+
+  $ export PATH=/usr/lib/jvm/java-8-openjdk/bin:$PATH
+  $ java -version
+  openjdk version "1.8.0_162"
+  OpenJDK Runtime Environment (build 1.8.0_162-b12)
+  OpenJDK 64-Bit Server VM (build 25.162-b12, mixed mode)
+
+  $ javac HelloWorld.java
+
+  $ perf stat -e cpu-clock -r50 java HelloWorld >/dev/null
+
+  Performance counter stats for 'java HelloWorld' (50 runs):
+  
+          73.870517      cpu-clock:u (msec)        #    1.111 CPUs utilized            ( +-  0.80% )
+  
+        0.066500354 seconds time elapsed                                          ( +-  0.97% )
+
+  #########################################################
+  # Java9
+
+  $ export PATH=/usr/lib/jvm/java-9-openjdk/bin:$PATH
+  $ java -version
+  openjdk version "9.0.4"
+  OpenJDK Runtime Environment (build 9.0.4+11)
+  OpenJDK 64-Bit Server VM (build 9.0.4+11, mixed mode)
+
+  $ javac HelloWorld.java
+
+  $ perf stat -e cpu-clock -r100 java HelloWorld >/dev/null
+   
+   Performance counter stats for 'java HelloWorld' (100 runs):
+   
+          174.249613      cpu-clock:u (msec)        #    1.390 CPUs utilized            ( +-  0.46% )
+   
+         0.125355882 seconds time elapsed                                          ( +-  0.61% )
+ 
+  #########################################################
+  # GraalVM (Java 8 based)
+
+  $ export PATH=~/bin/graalvm-1.0.0-rc1/bin/:$PATH
+  $ java -version
+  java version "1.8.0_161"
+  Java(TM) SE Runtime Environment (build 1.8.0_161-b12)
+  GraalVM 1.0.0-rc1 (build 25.71-b01-internal-jvmci-0.42, mixed mode)
+
+  $ javac HelloWorld.java
+
+  $ perf stat -e cpu-clock -r100 java HelloWorld >/dev/null
+   
+   Performance counter stats for 'java HelloWorld' (100 runs):
+   
+           97.356289      cpu-clock:u (msec)        #    1.147 CPUs utilized            ( +-  0.59% )
+   
+         0.084870116 seconds time elapsed                                          ( +-  0.73% )
+
+  #########################################################
+  # Java9 + JVMCI + Graal compiler
+
+  $ export PATH=/usr/lib/jvm/java-9-openjdk/bin:$PATH
+  $ java -version
+  openjdk version "9.0.4"
+  OpenJDK Runtime Environment (build 9.0.4+11)
+  OpenJDK 64-Bit Server VM (build 9.0.4+11, mixed mode)
+   
+  $ javac HelloWorld.java
+
+  $ perf stat -e cpu-clock -r100 java -XX:+UnlockExperimentalVMOptions -XX:+EnableJVMCI -XX:+UseJVMCICompiler HelloWorld >/dev/null
+   
+   Performance counter stats for 'java -XX:+UnlockExperimentalVMOptions -XX:+EnableJVMCI -XX:+UseJVMCICompiler HelloWorld' (100 runs):
+   
+          157.698255      cpu-clock:u (msec)        #    1.260 CPUs utilized            ( +-  0.47% )
+   
+         0.125177189 seconds time elapsed                                          ( +-  0.60% )
+
+  #########################################################
+  # SubstrateVM (AOT, compiled to native)
+
+  $ export PATH=~/bin/graalvm-1.0.0-rc1/bin/:$PATH
+  $ java -version
+  java version "1.8.0_161"
+  Java(TM) SE Runtime Environment (build 1.8.0_161-b12)
+  GraalVM 1.0.0-rc1 (build 25.71-b01-internal-jvmci-0.42, mixed mode)
+
+  $ javac HelloWorld.java
+  $ native-image HelloWorld
+  Build on Server(pid: 17224, port: 26681)
+     classlist:     411.03 ms
+         (cap):   1,131.85 ms
+         setup:   1,599.90 ms
+    (typeflow):   2,843.89 ms
+     (objects):   1,537.76 ms
+    (features):      31.64 ms
+      analysis:   4,526.03 ms
+      universe:     223.39 ms
+       (parse):     518.79 ms
+      (inline):     710.92 ms
+     (compile):   3,760.82 ms
+       compile:   5,466.79 ms
+         image:     776.56 ms
+         write:     231.92 ms
+       [total]:  13,280.51 ms
+
+  $ file ./helloworld
+  ./helloworld: ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 3.2.0, BuildID[sha1]=e4fa9799f7d2ff4d5715dbfe9b0d07f5e619b675, stripped
+
+  $ ldd ./helloworld
+          linux-vdso.so.1 (0x00007ffee5fd1000)
+          libdl.so.2 => /usr/lib/libdl.so.2 (0x00007f534bcac000)
+          libpthread.so.0 => /usr/lib/libpthread.so.0 (0x00007f534ba8e000)
+          libz.so.1 => /usr/lib/libz.so.1 (0x00007f534b877000)
+          librt.so.1 => /usr/lib/librt.so.1 (0x00007f534b66f000)
+          libcrypt.so.1 => /usr/lib/libcrypt.so.1 (0x00007f534b437000)
+          libc.so.6 => /usr/lib/libc.so.6 (0x00007f534b080000)
+          /lib64/ld-linux-x86-64.so.2 => /usr/lib64/ld-linux-x86-64.so.2 (0x00007f534c744000)
+
+  $ ls -lh helloworld
+  -rwxr-xr-x 1 suresh users 6.6M Apr 19 15:05 helloworld
+
+  $ perf stat -e cpu-clock -r100 ./helloworld >/dev/null
+   
+   Performance counter stats for './helloworld' (100 runs):
+   
+            2.127336      cpu-clock:u (msec)        #    0.894 CPUs utilized            ( +-  0.94% )
+   
+         0.002378289 seconds time elapsed                                          ( +-  0.91% )
+   
+  #########################################################
+  # LLVM bit core interpreter
+
+  $ clang -c -O1 -emit-llvm hello.c
+   
+  $ perf stat -e cpu-clock -r100 lli hello.bc >/dev/null
+   
+   Performance counter stats for 'lli hello.bc' (100 runs):
+   
+          106.270393      cpu-clock:u (msec)        #    1.320 CPUs utilized            ( +-  0.99% )
+   
+         0.080493463 seconds time elapsed                                          ( +-  0.77% )
+  #+END_EXAMPLE
