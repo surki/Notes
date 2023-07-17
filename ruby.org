@@ -1,0 +1,434 @@
+
+** Rails bootup
+  - ~/.rvm/gems/ruby-2.1.10/bin/rails
+    - ~/.rvm/gems/ruby-2.1.10/bin/ruby_executable_hooks
+      - Gem::ExecutableHooks.run($0) [~/.rvm/gems/ruby-2.1.10@global/gems/executable-hooks-1.3.2/lib/executable-hooks/hooks.rb]
+        - Gem.load_executable_plugins
+          - find_latest_files('rubygems_executable_plugin', false) [~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems.rb]
+            - returns
+              gems/executable-hooks-1.3.2/lib/rubygems_executable_plugin.rb and
+              gems/rubygems-bundler-1.4.4/lib/rubygems_executable_plugin.rb
+          - load_plugin_files (above 2 paths)
+          - gems get loaded here
+      - `eval` the ~/.rvm/gems/ruby-2.1.10/bin/rails
+        - load ~/.rvm/gems/ruby-2.1.10/gems/railties-3.2.22.2/bin/rails
+          - require .rvm/gems/ruby-2.1.10/gems/railties-3.2.22.2/lib/rails/cli.rb
+            - Rails::ScriptRailsLoader.exec_script_rails
+              - gems/ruby-2.1.10/gems/railties-3.2.22.2/lib/rails/script_rails_loader.rb
+              - exec ~/src/myapp/script/rails
+                - At this point, the current process image is replaced with
+                  new ruby image, all previous memory allocation etc are
+                  gone (including heap, regardless of if it is brk(2)ed or
+                  anon mmap(2)ed)
+              - RubyVM::main (MRI)
+                - RubyVM::ruby_options
+                  - RubyVM::ruby_process_options
+                    - Parse options and RUBYOPT env variable (in our setup,
+                      it auto requires 'bundler/setup.rb')
+                    - RubyVM::ruby_init_prelude
+                      - RubyVM::prelude_eval("prelude.rb")
+                      - RubyVM::prelude_eval("enc/prelude.rb")
+                      - RubyVM::prelude_eval("gem_prelude.rb")
+                        - RubyVM::rb_iseq_eval
+                          - RubyVM::vm_exec
+                            - ....
+                              - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems.rb")
+                              - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/x86_64-linux/rbconfig.rb")
+                              - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/compatibility.rb")
+                              - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/defaults.rb")
+                              - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/deprecate.rb")
+                              - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/errors.rb")
+                              - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/specification.rb")
+                              - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/version.rb")
+                              - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/requirement.rb")
+                              - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/platform.rb")
+                              - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/basic_specification.rb")
+                              - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/stub_specification.rb")
+                              - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/util/stringio.rb")
+                              - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/exceptions.rb")
+                              - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/core_ext/kernel_gem.rb")
+                              - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/core_ext/kernel_require.rb")
+                              - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/monitor.rb")
+                    - PREPARE_PARSE_MAIN()
+                      - RubyVM::load_file("script/rails")
+                      - require_libraries()
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/setup.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/shared_helpers.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/pathname.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/constants.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/rubygems_integration.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/config_file.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/user_interaction.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/dependency.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/path_support.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/ext.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/ext/build_error.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/ext/builder.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/ext/configure_builder.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/ext/ext_conf_builder.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/fileutils.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/tempfile.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/delegate.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/tmpdir.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/ext/rake_builder.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/ext/cmake_builder.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/command.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/optparse.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/current_ruby.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/gem_path_manipulation.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/rubygems_ext.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/match_platform.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/gem_helpers.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/version.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/settings.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/uri.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/uri/common.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/uri/generic.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/uri/ftp.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/uri/http.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/uri/https.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/uri/ldap.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/uri/ldaps.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/uri/mailto.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/definition.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/lockfile_parser.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/source.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/source/git.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/digest.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/source/path.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/source/rubygems.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/spec_fetcher.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/remote_fetcher.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/request.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/net/http.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/net/protocol.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/socket.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/timeout.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/net/http/exceptions.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/net/http/header.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/net/http/generic_request.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/net/http/request.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/net/http/requests.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/net/http/response.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/net/http/responses.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/net/http/proxy_delta.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/net/http/backward.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/time.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/date.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/date/format.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/request/http_pool.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/request/https_pool.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/request/connection_pools.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/uri_formatter.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/cgi.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/cgi/core.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/cgi/cookie.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/cgi/util.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/resolv.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/securerandom.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/openssl.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/openssl/bn.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/openssl/cipher.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/openssl/config.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/openssl/digest.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/openssl/x509.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/openssl/ssl.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/openssl/buffering.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/text.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/site_ruby/2.1.0/rubygems/name_tuple.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/set.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/dsl.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/dependency.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/ruby_dsl.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/source_list.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/ui.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/ui/silent.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/ui/rg_proxy.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/lazy_specification.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/spec_set.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/tsort.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/forwardable.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/runtime.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/environment.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/index.rb")
+                        - RubyVM::load_file("~/src/myapp/vendor/gems/acts_as_voteable/lib/acts_as_voteable/version.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/remote_specification.rb")
+                        - RubyVM::load_file("~/src/myapp/vendor/gems/add_pod_support-0.0.1/lib/add_pod_support/version.rb")
+                        - RubyVM::load_file("~/src/myapp/vendor/gems/ar_shards/lib/ar_shards/version.rb")
+                        - RubyVM::load_file("~/src/myapp/vendor/gems/facebook/lib/facebook/version.rb")
+                        - RubyVM::load_file("~/src/myapp/vendor/gems/has_flexiblefields/lib/has_flexiblefields/version.rb")
+                        - RubyVM::load_file("~/src/myapp/vendor/gems/has_no_table/lib/has_no_table/version.rb")
+                        - RubyVM::load_file("~/src/myapp/vendor/gems/highcharts-rails/lib/highcharts/version.rb")
+                        - RubyVM::load_file("~/src/myapp/vendor/gems/open_id_authentication/lib/open_id_authentication/version.rb")
+                        - RubyVM::load_file("~/src/myapp/vendor/gems/recaptcha/lib/recaptcha/version.rb")
+                        - RubyVM::load_file("~/src/myapp/vendor/gems/text_data_store/lib/text_data_store/version.rb")
+                        - RubyVM::load_file("~/src/myapp/vendor/gems/will_filter/lib/will_filter/version.rb")
+                        - RubyVM::load_file("~/src/myapp/vendor/gems/xss/lib/xss/version.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/dep_proxy.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/resolver.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/vendored_molinillo.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/vendor/molinillo/lib/molinillo.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/vendor/molinillo/lib/molinillo/gem_metadata.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/vendor/molinillo/lib/molinillo/errors.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/vendor/molinillo/lib/molinillo/resolver.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/vendor/molinillo/lib/molinillo/dependency_graph.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/vendor/molinillo/lib/molinillo/resolution.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/vendor/molinillo/lib/molinillo/state.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/vendor/molinillo/lib/molinillo/modules/specification_provider.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/vendor/molinillo/lib/molinillo/modules/ui.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/endpoint_specification.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/source/git/git_proxy.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/bundler-1.10.6/lib/bundler/stub_specification.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/core.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/version.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/context.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/breakpoint.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/interface.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/history.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/helpers/file.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/interfaces/local_interface.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/interfaces/script_interface.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/interfaces/remote_interface.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/processor.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/show.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/command.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/columnize-0.9.0/lib/columnize.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/columnize-0.9.0/lib/columnize/opts.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/columnize-0.9.0/lib/columnize/columnize.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/columnize-0.9.0/lib/columnize/version.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/helpers/string.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/undisplay.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/helpers/parse.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/irb.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/irb.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/e2mmap.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/irb/init.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/irb/context.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/irb/workspace.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/irb/inspector.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/irb/extend-command.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/irb/ruby-lex.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/irb/slex.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/irb/notifier.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/irb/output-method.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/irb/ruby-token.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/irb/input-method.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/irb/src_encoding.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/irb/magic-file.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/irb/locale.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/help.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/pp.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/English.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/pp.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/prettyprint.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/helpers/eval.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/thread.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/subcommands.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/subcommand_list.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/thread/current.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/helpers/thread.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/thread/list.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/thread/resume.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/thread/stop.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/thread/switch.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/break.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/eval.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/method.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/frame.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/helpers/frame.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/putl.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/up.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/list.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/continue.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/history.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/source.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/info.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/info/args.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/info/breakpoints.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/info/catch.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/info/display.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/info/file.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/info/line.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/info/program.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/delete.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/step.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/set.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/untracevar.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/ps.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/disable.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/disable/breakpoints.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/helpers/toggle.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/disable/display.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/kill.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/condition.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/finish.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/save.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/enable.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/enable/breakpoints.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/enable/display.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/edit.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/display.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/down.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/pry.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/restart.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/catch.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/var.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/var/all.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/helpers/var.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/var/const.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/var/instance.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/var/local.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/var/global.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/where.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/next.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/quit.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/tracevar.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/commands/interrupt.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/settings/autosave.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/setting.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/settings/post_mortem.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/settings/basename.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/settings/width.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/settings/linetrace.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/settings/histfile.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/settings/listsize.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/settings/verbose.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/settings/callstyle.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/settings/savefile.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/settings/autolist.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/settings/stack_on_error.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/settings/autoirb.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/settings/fullpath.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/settings/histsize.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/settings/autoeval.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/processors/command_processor.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/states/regular_state.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/state.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/processors/control_command_processor.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/states/control_state.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/remote.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/printers/plain.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/printers/base.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/yaml.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/syntax_error.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/exception.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/nodes.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/nodes/node.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/class_loader.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/omap.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/set.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/scalar_scanner.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/nodes/stream.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/nodes/document.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/nodes/sequence.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/nodes/scalar.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/nodes/mapping.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/nodes/alias.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/streaming.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/visitors.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/visitors/visitor.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/visitors/to_ruby.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/visitors/emitter.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/visitors/yaml_tree.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/tree_builder.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/handler.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/visitors/json_tree.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/json/ruby_events.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/visitors/depth_first.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/parser.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/coder.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/core_ext.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/y.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/deprecated.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/stream.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/json/tree_builder.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/json/yaml_events.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/json/stream.rb")
+                        - RubyVM::load_file("~/.rvm/rubies/ruby-2.1.10/lib/ruby/2.1.0/psych/handlers/document_stream.rb")
+                        - RubyVM::load_file("~/.rvm/gems/ruby-2.1.10/gems/byebug-5.0.0/lib/byebug/attacher.rb")
+                - RubyVM::ruby_run_node()
+                  Actual execution happens here
+
+# /home/suresh/.rvm/gems/ruby-2.1.10@global/gems/executable-hooks-1.3.2/lib/rubygems_executable_plugin.rb
+# /home/suresh/.rvm/gems/ruby-2.1.10@global/gems/rubygems-bundler-1.4.4/lib/rubygems_executable_plugin.rb
+
+** Setup
+   - Creating staging setup in the dev station
+
+#+BEGIN_SRC bash
+
+# Must install bundler version 1.10.6, other versions known to cause problem
+gem install bundler -v=1.10.6
+bundle install --without="test development"
+
+# Install passenger, we are not going to use webrick
+# We use the same version as the one used in staging
+gem install passenger -v=4.0.59
+
+# Setup the assets
+# In staging, assets are served from the CDN. We need to make it served from localhost.
+# Todo that, we need the following steps
+
+RAILS_ENV=staging bundle exec rake assets:precompile:primary
+vi myapp/config/asset_sync.yml # Under staging section, comment out the fog_directory: and asset_host_url_https: entries
+vi myapp/config/environments/staging.rb # comment out the block setting 'config.action_controller.asset_host'
+
+# Start the passenger server
+# Tweak the parameters to your liking
+RAILS_ENV=staging bundle exec passenger start --min-instances 1 --max-pool-size 1 --spawn-method direct
+
+#+END_SRC
+
+** Tips
+
+   - Running with jemalloc
+
+#+BEGIN_SRC bash
+   LD_PRELOAD=/usr/local/lib/libjemalloc.so.2 RAILS_ENV=staging bundle exec passenger start --min-instances 1 --max-pool-size 1 --spawn-method direct
+#+END_SRC bash
+
+   - Running with jemalloc + profiling enabled
+
+#+BEGIN_SRC bash
+   export MALLOC_CONF='stats_print:true,prof:true,prof_final:true'
+#+END_SRC bash
+
+   - Getting a jemalloc dump from a running process. This is required if
+     we are running under passenger and killing (that seems to not generate
+     profile data). Or if we want to dump in a running process.
+
+#+BEGIN_SRC bash
+   gdb -p PID_OF_MY_RUBY_APP -ex 'call mallctl("prof.dump", 0, 0, 0, 0)' -ex detach -ex qui
+#+END_SRC bash
+
+   - Getting a jemalloc stats from a running process.
+
+#+BEGIN_SRC bash
+   gdb -p PID_OF_MY_RUBY_APP -ex 'call malloc_stats_print(0, 0, 0)' -ex detach -ex qui
+#+END_SRC bash
+
+   - Attaching to a ruby process as early as possible
+
+     (the following command is for passenger run locally, you may have to
+     adjust the strings in grep accordingly)
+
+#+BEGIN_SRC bash
+   RACKAPP=""; while [ "$RACKAPP" == "" ]; do sleep 0.1; RACKAPP=$(ps aux | grep -i 'rack-loader' | grep -v grep | awk '{print $2}'); done; echo "App id is $RACKAPP"; sudo gdb -p $RACKAPP
+#+END_SRC bash
+
+   - Heap dump
+     - Install rbtrace
+     - Start object tracing
+#+BEGIN_SRC ruby
+      require 'objspace'
+      ObjectSpace.trace_object_allocations_start
+#+END_SRC
+
+     - Dump heap
+
+#+BEGIN_SRC bash
+     rbtrace -p PID -e 'Thread.new{require "objspace"; ObjectSpace.trace_object_allocations_start; GC.start(); ObjectSpace.dump_all(output: File.open("heap.json", "w"))}.join'  
+#+END_SRC
