@@ -1,0 +1,107 @@
+#+STARTUP: hidestars
+
+Related: https://www.freshworks.com/saas/debugging-memory-corruption-in-production-rails-app-using-mozilla-rr-blog/
+
+* Setup
+** Install rr
+#+BEGIN_EXAMPLE
+# Install rr dependencies
+sudo yum install git python2 ccache cmake make gcc gcc-c++ gdb libgcc glibc-devel libstdc++-devel zlib-devel python27-pexpect man-pages capnproto
+
+# Compile/install capnproto if no package available
+curl -O https://capnproto.org/capnproto-c++-0.6.1.tar.gz
+tar zxf capnproto-c++-0.6.1.tar.gz
+pushd capnproto-c++-0.6.1
+./configure --prefix=/usr
+make -j$(nproc) check
+sudo make install
+popd
+
+# Compile/install rr
+git clone https://github.com/mozilla/rr.git
+pushd rr
+mkdir obj
+cd obj
+PKG_CONFIG_PATH=/usr/lib/pkgconfig cmake -Ddisable32bit=ON ../
+make -j$(nproc)
+sudo make install
+popd
+
+# Enable perf paranoid
+echo "kernel.perf_event_paranoid=1" | sudo tee -a /etc/sysctl.conf
+
+# Install debuginfo
+yum-config-manager --enable "amzn-main-debuginfo" --enable "amzn-updates-debuginfo"
+sudo debuginfo-install glibc
+
+# Optional, may not be needed: Re-add the debug info into binary
+# sudo eu-unstrip -i -a -p 19069 -d out/
+
+# If you want to 'rr record; rr pack' and 'rr replay' in a separate machine
+# Get the cpu features from the machine (laptop etc) you want to 'rr replay'
+rr cpufeatures
+--disable-cpuid-features 0x80050440,0x40140400 --disable-cpuid-features-ext 0xffffd854,0xffffffff,0xf3ffffff --disable-cpuid-features-xsave 0xfffffffe
+#+END_EXAMPLE
+
+** Setup the app
+   Instructions for setting up Ruby
+
+#+BEGIN_EXAMPLE
+# Re-compile Ruby with "-O0" etc if needed
+sudo yum install gcc openssl-devel libyaml-devel libffi-devel readline-devel zlib-devel gdbm-devel ncurses-devel
+wget https://github.com/ruby/ruby/archive/v2_2_5.tar.gz
+tar xvf v2_2_5.tar.gz
+pushd ruby-2_2_5
+autoconf
+./configure --prefix=/usr/local --disable-install-doc --disable-install-rdoc --enable-load-relative  optflags="-O0" debugflags="-ggdb3"
+make -j$(nproc)
+sudo make install
+popd
+
+#Reinstall the gems
+sudo rm -rf /data/myapp/shared/bundler_gems
+pushd /data/myapp/current
+sudo gem install bundler -v=1.10.6
+sudo su deploy
+bundle install --without=test development --path=/data/myapp/shared/bundler_gems
+popd
+
+# Modify the app launch, for example:
+# Edit the /usr/local/bin/ruby-with-env with
+export _RR_TRACE_DIR=/rr_trace/
+exec /usr/local/bin/rr record --no-syscall-buffer --disable-cpuid-features 0x80050440,0x40140400 --disable-cpuid-features-ext 0xffffd854,0xffffffff,0xf3ffffff --disable-cpuid-features-xsave 0xfffffffe "/usr/local/bin/ruby" "$@"
+# Edit passenger.conf
+#  Set "passenger_spawn_method" to "direct"
+#  Set "passenger_max_pool_size" and "passenger_min_pool_size" values
+#  Remove "passenger_memory_limit"
+#  Set "passenger_start_timeout" to 3000
+
+
+# Backing up rootfs
+# rsync remote rootfs into local
+sudo rsync --progress  --hard-links --compress --archive --acls --xattrs --verbose --rsh 'ssh -F /home/suresh/.ssh/config -i /home/suresh/.ssh/id_rsa'  --rsync-path='sudo rsync' --exclude={'/dev/*','/proc/*','/sys/*','/tmp/*','/run/*','/mnt/*','/media/*','/lost+found','/backup.tar.gz','/root/.cache/*','/lib/modules/*','/data/myapp/shared/cached-copy/*','/usr/src/*','/usr/local/share/.cache/*','/backup/*','/tmp/*','/data/myapp/releases/*','/data/myapp/shared/cached-copy/*','/var/*','/opt/*'} myapp-i3metal:/ ./amzlinux_rootfs_new/ | tee /tmp/rsync.log
+
+Or if you want to use tar + untar method: cd / && tar -cvpzf backup.tar.gz --exclude=/backup.tar.gz --exclude=/root/.cache --exclude=/usr/share --exclude=/lib/modules --exclude=/usr/lib/jvm --exclude=/data/myapp/shared/cached-copy --exclude=/usr/src --exclude=/usr/local/share/.cache --exclude=/backup --exclude=/tmp --exclude=/data/myapp/releases --exclude=/data/myapp/shared/cached-copy --exclude=/var --exclude=/opt --one-file-system /
+sudo tar -xvpzf /path/to/backup.tar.gz -C amzlinux_rootfs --numeric-owner
+#+END_EXAMPLE
+
+* Using rr
+#+BEGIN_EXAMPLE
+# To record
+
+# To replay
+rr replay /rr_trace/ruby-0/ -- -ex 'handle SIGPIPE nostop noprint pass' -ex 'source /gdb_ruby.py'
+
+# To disassemble a Ruby file
+# ruby -e 'puts RubyVM::InstructionSequence.compile_file("/home/suresh/.rvm/gems/ruby-2.2.7/gems/multi_json-1.12.1/lib/multi_json/options_cache.rb").disasm'
+
+# To dump current heap from gdb
+call rb_gc(), objspace_dump_all(0,0,0), rb_io_closed($172)
+
+# Replay under chroot
+for f in /proc /sys /dev; do sudo mount --bind $f ./amzlinux_rootfs/$f; done
+
+sudo chroot ./amzlinux_rootfs/ /bin/bash -c 'export PATH=/bin:$PATH'
+
+handle SIGPIPE nostop noprint pass
+#+END_EXAMPLE
