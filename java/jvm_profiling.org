@@ -1,0 +1,99 @@
+# -*- org-export-babel-evaluate: nil -*-
+#+STARTUP: hidestars
+#+TITLE: JVM profiling
+#+AUTHOR: Suresh
+#+OPTIONS: H:4
+#+OPTIONS: toc:4
+#+OPTIONS: ^:nil
+#+OPTIONS: ~:nil
+#+LATEX_HEADER: \usepackage[margin=0.7in]{geometry}
+#+PROPERTY: header-args :cache yes
+#+EXCLUDE_TAGS: noexport
+
+* Introduction
+  This is a note on how to do Java application profiling in Linux. We will
+  be using Linux 'perf' utility to profile and flamegraphs to visualize the
+  profiled data.
+
+  You can see an introduction to this [[http://www.brendangregg.com/Slides/JavaOne2016_JavaFlameGraphs.pdf][here]], [[https://medium.com/netflix-techblog/java-in-flames-e763b3d32166][here]] and [[https://medium.com/netflix-techblog/saving-13-million-computational-minutes-per-day-with-flame-graphs-d95633b6d01f][here]]
+
+* Prerequisites
+  - Java
+
+    - Need Java 8 update 60 build 19 or newer needed. We are going to use
+      "-XX:+PreserveFramePointer" JVM option, which is introduced java 8,
+      update 60 build 19.
+    - Make sure JVM debug symbols are available. This is to make sure we get
+      enough insight into the JVM itself (which is written in C++).
+      #+BEGIN_EXAMPLE
+      # Check for "not stripped" text in the below output
+      $ find  $(dirname $(readlink -f `which java`))/../ -name libjvm.so -exec file {} \;
+      /usr/lib/jvm/java-8-openjdk/jre/bin/../lib/amd64/server/libjvm.so: ELF 64-bit LSB shared object, x86-64, version 1 (GNU/Linux), dynamically linked, BuildID[sha1]=5e493871339f95bc582a556d9cdee15df33e103b, not stripped, too many notes (256)
+      #+END_EXAMPLE
+    - Application should be started with these options
+
+      "-XX:+PreserveFramePointer -XX:+UnlockDiagnosticVMOptions -XX:+DebugNonSafepoints" 
+
+      Reason:
+
+      - "PreserveFramePointer" is needed for the stackwalk of JITed code (==
+        get meaningful stacktrace for JITed functions).
+      - JVM retains debug information about inlined functions etc only at
+        "safe points" but we will be sampling callstacks outside of JVM (==
+        non-safe points), so we need to ask JVM to include debug information
+        even in non-safe points:
+
+      In addition to this, some options to tweak around:
+
+      -XX:-Inline, -XX:MaxInlineSize and -XX:InlineSmallCode
+
+  - Perf utils
+
+    #+BEGIN_EXAMPLE
+    yum install perf
+    #+END_EXAMPLE
+  - perf-map-agent 
+
+    This is to get information about JITed java code. This tool attaches to
+    the JVM (using JVMTI infrastructure) and dumps out the compiled method
+    information. Note that since it is doing to do a point-in-time dump of
+    mappings, there may be some stale entries (or entries re-cycled). To
+    minimize this issue, make sure the application is warmed up.
+
+    #+BEGIN_EXAMPLE
+    mkdir ~/app_profiling
+    pushd ~/app_profiling
+    yum install cmake
+    export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:/bin/java::")
+    git clone https://github.com/jrudolph/perf-map-agent
+    cd perf-map-agent
+    cmake .
+    make
+    popd
+    #+END_EXAMPLE
+  - Flamegraph
+
+    We will be visualizing the collected data using FlameGraphs
+
+    #+BEGIN_EXAMPLE
+    pushd ~/app_profiling
+    git clone https://github.com/brendangregg/FlameGraph.git
+    popd
+    #+END_EXAMPLE
+
+* Profiling
+  - Make sure application is started with "-XX:+PreserveFramePointer
+    -XX:+UnlockDiagnosticVMOptions -XX:+DebugNonSafepoints" options
+  - Make sure application is warmed up
+  - Once the application is ready, generate the load
+  - Profile the app (make sure the load generation is going on)
+    #+BEGIN_EXAMPLE
+    pushd ~/app_profiling
+    export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:/bin/java::")
+    export FLAMEGRAPH_DIR=~/app_profiling/FlameGraph
+    PERF_RECORD_SECONDS=30 ./perf-map-agent/bin/perf-java-flames my_app_pid
+
+    # View the resultant SVG file in the browser
+    #+END_EXAMPLE
+  - Example output
+    [[./flamegraph.svg]]
