@@ -1,0 +1,131 @@
+#+STARTUP: hidestars
+#+TITLE: Debugging
+#+AUTHOR: Suresh Kumar Ponnusamy
+#+EMAIL: sureshkumar.pp@gmail.com
+#+OPTIONS: H:4
+#+OPTIONS: toc:4
+#+OPTIONS: ^:nil
+#+OPTIONS: ~:nil
+#+LATEX_HEADER: \usepackage[margin=0.7in]{geometry}
+
+* Debugging
+
+  Quick dump of my mental model/notes on how to debug application
+  crashes/performance/logical problems
+
+** Get a quick to iterate reproducable setup of the problem
+   If we can't, it becomes bit more difficult, and our options are limited
+** Logical/performance problems
+   - Get insight into what the application is doing
+     - At system level
+
+       This will help us look at what application was doing in the context
+       of entire system
+
+       #+BEGIN_EXAMPLE
+       sudo perf record -a -g ./etcd ....
+       sudo perf script | ~/src/FlameGraph/stackcollapse-perf.pl | ~/src/FlameGraph/flamegraph.pl > /tmp/etcd.svg
+
+       # Also use FlameScope to focus just on the interested time period
+       # https://github.com/Netflix/flamescope
+       sudo perf script --headers > etcd.perf.dump
+       cp etcd.perf.dump /path/to/flamescope/examples/
+       cd /path/to/flamescope/examples/
+       python run.py
+       .....
+       #+END_EXAMPLE
+     - At application level
+       - Read application source to get some understanding of the basic flow
+       - Observe what application is doing (use appropriate tool depending on
+         the application language/runtime: strace, ltrace, gdb, GODEBUG/"go
+         tool trace", printf etc)
+         #+BEGIN_EXAMPLE
+         # golang specific
+         GODEBUG=gctrace=1,gcpacertrace=1 ... ./etcd ...
+
+         #And modify the application to dump pprof profile and use "go tool
+         trace" etc
+
+         #And modify the application to write some log ...
+         #+END_EXAMPLE
+       - It is also important to make sure that what we observe above be
+         reconfirmed from multiple angles
+         #+BEGIN_EXAMPLE
+         # golang specific
+         #
+         # Say you saw certain GC timings in "go tool trace" or using "GODEBUG".
+         # You can re-confirm these timings from another angle
+         # (using "gdb+python script", dynamic trace points ("perf probe") etc)
+         #
+         # Example using "perf probe", we will create two probe points one at
+         # "STW start" and another at "STW end" and compute/display the timings
+         sudo perf probe -x ./etcd 'startworld=runtime.startTheWorldWithSema*'
+         sudo perf probe -x ./etcd 'stopworld=runtime.stopTheWorldWithSema*'
+         sudo perf record -e probe_etcd:startworld -e probe_etcd:stopworld -p `pidof etcd`
+         sudo perf script
+         sudo perf script | awk '/probe_etcd:stopworld:/ {stop=$4} ; /probe_etcd:startworld:/{printf "STW = %f ms\n", ($4-stop)*1000; stop=-1000}'
+         #+END_EXAMPLE
+   - As part of debugging, the more unrelated "noise" we remove, the quicker
+     we can "see"/"reach" root cause of the problem. This needs to be done
+     judiciously though.
+
+     So at each step during discovery/insight, as we observe things, start
+     controlling parameters that we can (for example, giving more
+     CPU/Memory/Disk to application etc). This will allow us to remove noise
+     and move closer to the root cause of the problem (atleast most of the
+     time, sometimes it may so happen that these "noises" are the problem,
+     but then when controlling them, we can discover them).
+
+     Some tips:
+     #+BEGIN_EXAMPLE
+     # Remove disk variation
+     mkdir datadir
+     mount -t tmpfs tmpfs datadir
+     # Now make your application use/point to datadir
+
+     # Remove CPU resource contention
+     .... sudo chrt --rr 99 ./yourapp ...
+
+     # golang specific
+     # Remove GC pressure
+     # GOGC=300 ./yourapp ...
+     #+END_EXAMPLE
+** Crashes
+   There can be various kinds of crashes, at very high level, probably can
+   be classified into two "kinds": immediate crash, lateral crash (for lack
+   of better word)
+
+   - Immediate crash
+
+     This is when the program does something incorrect and causes immediate
+     crash (for example accessing a memory it is not supposed to etc)
+
+     To debug these crashes: we can use gdb (either directly, or by enabling
+     "coredump" and loading it later in gdb)
+
+   - Lateral crash
+
+     This is when the program did something wrong but didn't crash
+     immediately but this caused crash later (minutes or even hours
+     later). For example: "foo" object in the program overwrote a piece of
+     memory it doesn't own (but valid memory, say, owned by "bar" object),
+     later when "bar" object uses/manipulates memory, it will lead to crash.
+
+     Debugging these crashes is bit more involved and may need different set
+     of approaches/tools based on the scenario/environment.
+
+     - One technique is to "convert" these lateral crashes into immediate
+       crashes, so we can catch them in action during corruption.
+
+       Some of these are: efence/libduma (for heap corruption), valgrind etc
+
+       Note these will catch out of bound accesses, but may not be able to
+       catch valid memory access but logically incorrect modifications
+       (example "foo" object modifying "bar" object's memory)
+
+     - Another technique is to use some sort of record/replay system that we
+       can replay later (i.e., after crash, go back in time to find out who
+       modified/corrupted that region).
+
+       One usable (magical) tool is: "mozilla rr" (has negligible overhead,
+       so could be used in production as well)
